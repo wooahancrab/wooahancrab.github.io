@@ -1,8 +1,8 @@
-const CACHE = "wooahan-v18";
+﻿const CACHE = "wooahan-v24";
 const SHELL = [
   "./", "index.html", "manifest.webmanifest", "src/styles.css", "src/main.js", "src/config.js",
   "src/lib/api.js", "src/lib/ui.js", "src/lib/kst.js", "src/lib/report.js",
-  "src/screens/manager-report.js", "src/screens/owner.js", "src/screens/attendance.js", "src/screens/attendance-admin.js", "src/lib/att-demo.js", "src/lib/geo.js", "src/screens/claims.js", "src/screens/sales.js", "src/lib/sales.js", "src/screens/checklist.js", "src/screens/tasks.js", "src/screens/tasks-admin.js", "src/screens/checklist-admin.js", "src/screens/ceo.js", "src/lib/claims-demo.js", "src/lib/settle.js", "src/screens/settle.js", "icons/icon-192.png", "icons/logo.png", "icons/logo-mark.png",
+  "src/screens/manager-report.js", "src/screens/owner.js", "src/screens/attendance.js", "src/screens/attendance-admin.js", "src/lib/att-demo.js", "src/lib/geo.js", "src/screens/claims.js", "src/screens/sales.js", "src/lib/sales.js", "src/lib/bank.js", "src/lib/invoice-match.js", "src/screens/checklist.js", "src/screens/tasks.js", "src/screens/tasks-admin.js", "src/screens/checklist-admin.js", "src/screens/ceo.js", "src/lib/claims-demo.js", "src/lib/settle.js", "src/screens/settle.js", "icons/icon-192.png", "icons/logo.png", "icons/logo-mark.png",
 ];
 
 self.addEventListener("install", (e) => {

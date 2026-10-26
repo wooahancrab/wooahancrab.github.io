@@ -72,6 +72,13 @@ const demo = {
   ...claimsDemo,
   async stRecv() { return LS.get("woo_demo_recv", []); },
   async stDeps() { return LS.get("woo_demo_deps", []); },
+  async stWds() { return []; },
+  async stRules() { return []; },
+  async stSetRule() {},
+  async stDelRule() {},
+  async stAddWds() { return 0; },
+  async stInvs() { return []; },
+  async stAddInvs() { return 0; },
   async stAddRecv(rows) {
     const all = LS.get("woo_demo_recv", []); const have = new Set(all.map((r) => r.ref)); let n = 0;
     for (const r of rows) if (!have.has(r.ref)) { all.push({ id: "r" + Math.random().toString(36).slice(2), closed: false, dunned_at: null, ...r }); n++; }
@@ -319,6 +326,50 @@ const remote = {
     for (let i = 0; i < rows.length; i += 500) {
       const part = rows.slice(i, i + 500).map((r) => ({ store_id, dep_date: r.date, amount: r.amount, memo: r.memo ?? "", ref: r.ref }));
       const { data, error } = await c.from("bank_deposits").upsert(part, { onConflict: "store_id,ref", ignoreDuplicates: true }).select("id");
+      if (error) throw error; n += data.length;
+    }
+    return n;
+  },
+  // 통장 출금(지출) 내역
+  async stWds() {
+    const { data, error } = await (await sb()).from("bank_withdrawals").select("id,wd_date,amount,memo").eq("store_id", await this.storeId()).order("wd_date");
+    if (error) throw error;
+    return data.map((d) => ({ id: d.id, date: d.wd_date, amount: d.amount, memo: d.memo }));
+  },
+  // 거래처 분류 규칙 (지출 분석)
+  async stRules() {
+    const { data, error } = await (await sb()).from("spend_rules").select("keyword,category").eq("store_id", await this.storeId());
+    if (error) throw error;
+    return data;
+  },
+  async stSetRule(keyword, category) {
+    const { error } = await (await sb()).from("spend_rules").upsert({ store_id: await this.storeId(), keyword: keyword.trim(), category: category.trim() }, { onConflict: "store_id,keyword" });
+    if (error) throw error;
+  },
+  async stDelRule(keyword) {
+    const { error } = await (await sb()).from("spend_rules").delete().eq("store_id", await this.storeId()).eq("keyword", keyword);
+    if (error) throw error;
+  },
+  async stAddWds(rows) {
+    const c = await sb(), store_id = await this.storeId(); let n = 0;
+    for (let i = 0; i < rows.length; i += 500) {
+      const part = rows.slice(i, i + 500).map((r) => ({ store_id, wd_date: r.date, amount: r.amount, memo: r.memo ?? "", ref: r.ref }));
+      const { data, error } = await c.from("bank_withdrawals").upsert(part, { onConflict: "store_id,ref", ignoreDuplicates: true }).select("id");
+      if (error) throw error; n += data.length;
+    }
+    return n;
+  },
+  // 매입 (세금)계산서
+  async stInvs() {
+    const { data, error } = await (await sb()).from("tax_invoices").select("issue_date,approval_no,supplier,rep,biz_no,amount,tax_free,item").eq("store_id", await this.storeId()).order("issue_date").limit(5000);
+    if (error) throw error;
+    return data.map((d) => ({ date: d.issue_date, no: d.approval_no, supplier: d.supplier, rep: d.rep, bizNo: d.biz_no, amount: d.amount, taxFree: d.tax_free, item: d.item }));
+  },
+  async stAddInvs(rows) {
+    const c = await sb(), store_id = await this.storeId(); let n = 0;
+    for (let i = 0; i < rows.length; i += 500) {
+      const part = rows.slice(i, i + 500).map((r) => ({ store_id, issue_date: r.date, approval_no: r.no, supplier: r.supplier, rep: r.rep, biz_no: r.bizNo, amount: r.amount, tax_free: r.taxFree, item: r.item }));
+      const { data, error } = await c.from("tax_invoices").upsert(part, { onConflict: "store_id,approval_no", ignoreDuplicates: true }).select("id");
       if (error) throw error; n += data.length;
     }
     return n;

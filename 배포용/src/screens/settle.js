@@ -2,6 +2,8 @@
 import { api } from "../lib/api.js";
 import { h, toast, copyText, confirmDialog } from "../lib/ui.js";
 import { todayKST, addDays } from "../lib/kst.js";
+import { parseBankStatement } from "../lib/bank.js";
+import { parseInvoices } from "../lib/invoice-match.js";
 import { SOURCES, won, reconcile, summarize, parseBank, parseInvoice, parseSettle, parseDolsoe, parseGrip, dunText, toDate } from "../lib/settle.js";
 
 const XLSX_URL = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
@@ -14,11 +16,12 @@ function loadXlsx() {
     document.head.append(s);
   }));
 }
-async function readSheet(file) { // 첫 시트를 2차원 배열로
+async function readBook(file) { // 모든 시트를 2차원 배열의 배열로
   const X = await loadXlsx();
   const wb = X.read(await file.arrayBuffer(), { type: "array", cellDates: true });
-  return X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: "" });
+  return wb.SheetNames.map((n) => X.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: "" }));
 }
+async function readSheet(file) { return (await readBook(file))[0]; } // 첫 시트
 
 const STATUS = {
   overdue: ["미입금", "err"], diff: ["금액 다름", "err"], waiting: ["입금 대기", "muted"],
@@ -40,23 +43,38 @@ export async function renderSettle(root, onBack) {
     return reconcile(recv, deps, { today });
   }
 
-  async function pickFile(accept, handler) {
+  async function pickFile(accept, handler, allSheets = false) {
     const inp = h("input", { type: "file", accept, style: "display:none" });
     inp.onchange = async () => {
       const f = inp.files[0]; if (!f) return;
       busy = true; draw();
-      try { await handler(await readSheet(f)); } catch (e) { toast(e.message, 6000); }
+      try { await handler(allSheets ? await readBook(f) : await readSheet(f)); } catch (e) { toast(e.message, 6000); }
       busy = false; await load();
     };
     document.body.append(inp); inp.click(); setTimeout(() => inp.remove(), 60000);
   }
 
-  const upBank = () => pickFile(".xlsx,.xls,.csv", async (rows) => {
-    const list = parseBank(rows); const seen = new Map();
-    const withRef = list.map((d) => { const k = `${d.date}|${d.amount}|${d.memo}`; const n = (seen.get(k) ?? 0) + 1; seen.set(k, n); return { ...d, ref: `${k}|${n}` }; });
-    const n = await api.stAddDeps(withRef);
-    toast(`입금 ${list.length}건 중 새로 ${n}건 반영했어요`);
-  });
+  // 통장 거래내역: 입금은 수금 대조·매출에, 출금은 지출 분석에 쓴다. 시트가 여러 개거나 겹쳐도 중복 없이 한 번만 반영한다.
+  const upBank = () => pickFile(".xlsx,.xls,.csv,.nxl", async (sheets) => {
+    const r = parseBankStatement(sheets);
+    const nIn = await api.stAddDeps(r.deposits.map((d) => ({ date: d.date, amount: d.amount, memo: d.memo, ref: d.ref })));
+    const nOut = await api.stAddWds(r.withdrawals);
+    toast(`입금 ${r.deposits.length}건 중 새로 ${nIn}건, 출금 ${r.withdrawals.length}건 중 새로 ${nOut}건 반영했어요`, 6000);
+  }, true);
+  // 홈택스 매입 (세금)계산서 — 계산서·세금계산서 파일을 한꺼번에 골라도 된다(승인번호로 중복 제거)
+  const upInvs = () => {
+    const inp = h("input", { type: "file", accept: ".xlsx,.xls,.csv", multiple: true, style: "display:none" });
+    inp.onchange = async () => {
+      const fs = [...inp.files]; if (!fs.length) return;
+      busy = true; draw();
+      try {
+        const list = parseInvoices((await Promise.all(fs.map(readBook))).flat());
+        toast(`매입 계산서 ${list.length}건 중 새로 ${await api.stAddInvs(list)}건 반영했어요 (매출·지출 화면의 '계산서 대조'에서 확인)`, 7000);
+      } catch (e) { toast(e.message, 6000); }
+      busy = false; await load();
+    };
+    document.body.append(inp); inp.click(); setTimeout(() => inp.remove(), 60000);
+  };
   const upSettle = (source) => pickFile(".xlsx,.xls,.csv", async (rows) => {
     const list = parseSettle(rows, source);
     toast(`${SOURCES[source].label} 정산 ${list.length}일치 중 새로 ${await api.stAddRecv(list)}건 반영했어요`);
@@ -147,7 +165,8 @@ export async function renderSettle(root, onBack) {
         h("button", { class: "btn ghost slim", disabled: busy, onclick: () => upSettle("talkdeal") }, "톡딜 정산내역"),
         h("button", { class: "btn ghost slim", disabled: busy, onclick: upDolsoe }, "돌쇠네 정산서"),
         h("button", { class: "btn ghost slim", disabled: busy, onclick: upGrip }, "착밀(Grip) 정산"),
-        h("button", { class: "btn ghost slim", disabled: busy, onclick: upInvoice }, "홈택스 세금계산서"),
+        h("button", { class: "btn primary slim", disabled: busy, onclick: upInvs }, "🧾 매입 계산서 (홈택스)"),
+        h("button", { class: "btn ghost slim", disabled: busy, onclick: upInvoice }, "매출 세금계산서"),
         h("button", { class: "btn ghost slim", onclick: addManual }, "＋ 직접 추가")),
       h("p", { class: "muted", style: "font-size:12px" }, "세금계산서 입금기한: 작성일 + ", term, "일 · 돌쇠 입금: 정산기간 끝 + ",
         h("input", { class: "inp", type: "number", min: "0", value: String(dolsoeDays), style: "width:60px;display:inline-block", onchange: (e) => { dolsoeDays = Number(e.target.value) || 0; } }), "일  (같은 파일을 다시 올려도 중복되지 않아요)"),
