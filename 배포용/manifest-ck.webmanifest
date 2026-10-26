@@ -1,0 +1,16 @@
+{
+  "id": "/ck/",
+  "name": "우아한CK",
+  "short_name": "우아한CK",
+  "lang": "ko",
+  "start_url": "/ck/",
+  "scope": "/ck/",
+  "display": "standalone",
+  "background_color": "#f4fbf8",
+  "theme_color": "#2e7d6b",
+  "icons": [
+    { "src": "/icons/ck-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/ck-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/ck-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
