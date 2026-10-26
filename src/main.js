@@ -8,7 +8,7 @@ import { renderCeo } from "./screens/ceo.js";
 import { renderAttendanceAdmin } from "./screens/attendance-admin.js";
 import { renderChecklist } from "./screens/checklist.js";
 import { renderTasks } from "./screens/tasks.js";
-import { renderSettle } from "./screens/settle.js";
+import { renderFinance } from "./screens/finance.js";
 import { renderChecklistAdmin } from "./screens/checklist-admin.js";
 
 // 앱 종류: 우아한게장(기본)·CK·F&B·대표 총괄. 각 앱의 index.html 이 window.APP 로 알려 준다.
@@ -103,7 +103,8 @@ function tabbedHome(view, profile, tabs) {
   // F&B(본사 사무직): 업무지시를 받는 "업무" 탭
   if (profile.store_kind === "hq") tabs = [["tk", "업무", renderTasks], ...tabs];
   // 정산 자료 올리기 권한이 있는 직원(경리·사무): 통장·정산 엑셀을 올리는 수금 대조 탭
-  if (profile.can_settle && profile.store_kind === "hq") tabs = [...tabs, ["st", "수금", (pane) => renderSettle(pane, null)]];
+  // 게장·F&B 두 사업장의 매출·지출, 통장·수금을 모두 본다(사업장 선택은 재무 탭 안에서)
+  if (profile.can_settle && profile.store_kind === "hq") tabs = [...tabs, ["st", "재무", renderFinance]];
   // CK: 작업자 점검 탭, 관리자(중간관리자·매니저)는 점검 현황 탭도
   if (profile.store_kind === "ck") {
     const extra = [["chk", "점검", renderChecklist]];
@@ -119,6 +120,7 @@ function tabbedHome(view, profile, tabs) {
     // 탭마다 새 컨테이너: 탭을 떠난 화면의 타이머·늦게 끝난 그리기가 지금 화면을 덮어쓰지 못하게 한다
     const pane = h("div");
     body.replaceChildren(pane);
+    if (tab !== "st") api.setStore(null); // 재무 탭에서 고른 사업장이 다른 탭(내 출퇴근 등)에 남지 않게
     await tabs.find((t) => t[0] === tab)[2](pane, profile);
   };
   view.append(bar, body);

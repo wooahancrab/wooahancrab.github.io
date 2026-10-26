@@ -151,14 +151,15 @@ export async function renderSettle(root, onBack) {
 
     root.replaceChildren(h("div", { class: "page" },
       onBack && h("button", { class: "linkbtn back", onclick: onBack }, "← 목록"),
-      h("h1", null, "💰 수금 대조"),
+      h("h1", null, "💰 통장·수금"),
       loadErr && h("p", { class: "err" }, "불러오기 실패: " + loadErr + " (settle.sql을 실행했는지 확인)"),
       stale && h("div", { class: "banner" }, lastDep ? `통장 내역이 ${lastDep}까지예요. 오늘 내역을 올려야 정확해요` : "통장 거래내역 엑셀을 먼저 올려 주세요"),
-      h("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
+      // 받을 돈(네이버·톡딜·돌쇠·착밀·매출 계산서)이 하나도 없으면 미입금 현황은 빈 숫자라서 숨긴다
+      recv.length > 0 && h("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
         card("미입금", `${s.overdue}건`, won(s.overdueAmt), s.overdue ? "err" : "ok-text"),
         card("금액 다름", `${s.diff}건`, won(s.diffAmt), s.diff ? "err" : "ok-text"),
         card("입금 대기", `${s.waiting}건`, won(s.waitingAmt), "muted")),
-      h("h2", { style: "margin-top:16px" }, "① 자료 올리기"),
+      h("h2", { style: "margin-top:16px" }, "자료 올리기"),
       h("div", { style: "display:flex;gap:6px;flex-wrap:wrap" },
         h("button", { class: "btn primary slim", disabled: busy, onclick: upBank }, "🏦 통장 거래내역"),
         h("button", { class: "btn ghost slim", disabled: busy, onclick: () => upSettle("naver") }, "네이버 정산내역"),
@@ -172,12 +173,16 @@ export async function renderSettle(root, onBack) {
         h("input", { class: "inp", type: "number", min: "0", value: String(dolsoeDays), style: "width:60px;display:inline-block", onchange: (e) => { dolsoeDays = Number(e.target.value) || 0; } }), "일  (같은 파일을 다시 올려도 중복되지 않아요)"),
       h("p", { class: "muted", style: "font-size:12px" }, "네이버·톡딜은 '일별 정산(정산확정금액·대금지급현황)' 파일이 정확해요. 건별 파일은 예정(추정)으로만 들어가고, 일별 파일을 올리면 확정 금액으로 바뀌어요."),
       busy && h("p", { class: "muted" }, "읽는 중…"),
-      h("h2", { style: "margin-top:16px" }, "② 확인하기"),
-      h("div", { class: "tabs" }, TABS.map(([k, l]) => h("button", { class: "tab" + (tab === k ? " on" : ""), onclick: () => { tab = k; draw(); } }, `${l} ${group(k).length}`))),
-      list.length ? list.map(rowView) : h("p", { class: "muted" }, tab === "overdue" ? "미입금 건이 없어요 🎉" : "해당 건이 없어요"),
-      tab === "done" && unmatchedDeposits.length > 0 && h("details", { style: "margin-top:12px" },
-        h("summary", null, `어느 건에도 안 맞는 입금 ${unmatchedDeposits.length}건 (참고)`),
-        unmatchedDeposits.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60).map((d) => h("div", { class: "muted", style: "font-size:13px" }, `${d.date}  ${won(d.amount)}  ${d.memo}`)))));
+      recv.length === 0
+        ? h("p", { class: "muted", style: "margin-top:16px" }, "받을 돈 자료(네이버·톡딜 정산, 돌쇠, 착밀, 매출 계산서)를 올리면 미입금·금액 차이를 여기서 찾아 드려요. 지금은 통장 내역과 매입 계산서만 올려도 매출·지출 보고에 쓰여요.")
+        : [
+          h("h2", { style: "margin-top:16px" }, "확인하기"),
+          h("div", { class: "tabs" }, TABS.map(([k, l]) => h("button", { class: "tab" + (tab === k ? " on" : ""), onclick: () => { tab = k; draw(); } }, `${l} ${group(k).length}`))),
+          list.length ? list.map(rowView) : h("p", { class: "muted" }, tab === "overdue" ? "미입금 건이 없어요 🎉" : "해당 건이 없어요"),
+          tab === "done" && unmatchedDeposits.length > 0 && h("details", { style: "margin-top:12px" },
+            h("summary", null, `어느 건에도 안 맞는 입금 ${unmatchedDeposits.length}건 (참고)`),
+            unmatchedDeposits.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60).map((d) => h("div", { class: "muted", style: "font-size:13px" }, `${d.date}  ${won(d.amount)}  ${d.memo}`))),
+        ]));
   }
 
   draw();

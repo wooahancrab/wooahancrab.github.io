@@ -11,6 +11,20 @@ import { reconcile as matchInvoices, nz } from "../lib/invoice-match.js";
 const NEEDS_INV = ["식자재·매입", "쌀·곡물 매입", "수산·꽃게 매입", "개인 이체(급여 등)", "기타"];
 const OWNERS = ["이홍근", "김형곤", "이한만", "이명근", "이경희"];
 
+// 한눈에 보는 비율 막대 + 범례. 항목이 많으면 작은 것들은 "그 외"로 묶는다.
+const PALETTE = ["#2f6f4e", "#3b7dd8", "#d98a1f", "#b84a4a", "#7a5cc7", "#4a9aa0", "#c2569a", "#8a8a8a"];
+function share(items) {
+  const list = items.filter((i) => i.total > 0);
+  const sum = list.reduce((s, i) => s + i.total, 0);
+  if (!sum) return null;
+  const top = list.length > 8 ? [...list.slice(0, 7), { name: "그 외", total: list.slice(7).reduce((s, i) => s + i.total, 0) }] : list;
+  const col = (k) => PALETTE[k % PALETTE.length];
+  return h("div", { style: "margin:6px 0 10px" },
+    h("div", { style: "display:flex;height:18px;border-radius:9px;overflow:hidden" }, top.map((i, k) => h("div", { title: i.name, style: `width:${(i.total / sum * 100).toFixed(2)}%;background:${col(k)}` }))),
+    h("div", { style: "display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;margin-top:6px" }, top.map((i, k) =>
+      h("span", null, h("span", { style: `display:inline-block;width:10px;height:10px;border-radius:3px;background:${col(k)};margin-right:4px` }), `${i.name} ${Math.round(i.total / sum * 100)}%`))));
+}
+
 const man = (n) => Math.round(n / 10000).toLocaleString("ko-KR") + "만";
 
 export async function renderSales(root, onBack, opts = {}) {
@@ -75,7 +89,7 @@ export async function renderSales(root, onBack, opts = {}) {
       h("button", { class: "tab" + (view === k ? " on" : ""), onclick: () => { view = k; draw(); } }, l)));
 
     root.replaceChildren(h("div", { class: "page" },
-      h("button", { class: "linkbtn back", onclick: onBack }, "← 목록"),
+      onBack && h("button", { class: "linkbtn back", onclick: onBack }, "← 목록"),
       h("h1", null, "📊 매출·지출 보고"),
       err && h("p", { class: "err" }, "불러오기 실패: " + err + " (settle.sql·sales.sql·bank.sql 실행 여부 확인)"),
       tabs,
@@ -92,6 +106,7 @@ export async function renderSales(root, onBack, opts = {}) {
           view === thisMonth && stat("앞으로 14일 정산 예정", man(r.upcomingTotal) + "원", `${r.upcoming.length}건`))),
 
       h("section", { class: "card" }, h("h2", null, "입금 구분"),
+        share(inB.map((g) => ({ name: g.group, total: g.total }))),
         inB.length ? inB.map((g) => h("details", { style: "margin:6px 0" },
           h("summary", null, h("b", null, g.group), `  ${won(g.total)}  (${g.n}건)`),
           g.items.slice(0, 15).map((i) => h("div", { class: "srow" }, h("span", { class: "muted" }, i.name), h("span", null, won(i.total))))))
@@ -99,6 +114,7 @@ export async function renderSales(root, onBack, opts = {}) {
         h("p", { class: "muted", style: "font-size:12px" }, "카드사 입금은 카드 매출, 대표·가족 이체는 매출이 아니에요. 입금은 매출과 며칠 차이가 날 수 있어요.")),
 
       h("section", { class: "card" }, h("h2", null, "지출 분석 (출금)"),
+        share(sp.cats.map((c) => ({ name: c.name, total: c.total }))),
         sp.cats.length ? sp.cats.map((c) => h("details", { style: "margin:6px 0" },
           h("summary", null, h("b", null, c.name), `  ${won(c.total)}  (${c.n}건)`),
           c.items.slice(0, 25).map((i) => h("div", { class: "srow" }, h("span", { class: "muted" }, i.name, " ", h("button", { class: "linkbtn", style: "font-size:12px", onclick: () => assign(i.name, c.name) }, "분류")), h("span", null, won(i.total))))))
