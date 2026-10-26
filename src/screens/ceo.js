@@ -3,6 +3,8 @@ import { api } from "../lib/api.js";
 import { h, toast } from "../lib/ui.js";
 import { fmtHM } from "../lib/kst.js";
 import { renderOwner } from "./owner.js";
+import { renderSuggestAdmin } from "./suggest.js";
+import { renderTasksAdmin } from "./tasks-admin.js";
 
 const SHORT = { gejang: "게장", ck: "CK", fnb: "F&B" };
 const KIND_ICON = { restaurant: "🦀", ck: "🏭", hq: "🏢" };
@@ -13,6 +15,8 @@ export async function renderCeo(root, profile) {
   let err = "";
   let sel = "all";
   let accountsOpen = false; // 전체 계정 관리 화면
+  let sgOpen = false, sgNew = 0; // 건의함 화면(대표만)
+  let tkOpen = false; // 전 직원 업무지시 화면
   try { sel = localStorage.getItem("woo_ceo_sel") || "all"; } catch { /* 저장소를 못 쓰는 환경 */ }
 
   const badge = (t, c) => h("span", { class: "badge " + c }, t);
@@ -20,6 +24,7 @@ export async function renderCeo(root, profile) {
   async function load() {
     try {
       [stores, ov] = await Promise.all([api.listStores(), api.overview()]);
+      if (profile.role === "owner") sgNew = (await api.sgList().catch(() => [])).filter((r) => r.status === "새글").length;
       err = "";
       if (sel !== "all" && !stores.some((s) => s.id === sel)) sel = "all";
     } catch (e) { err = e.message; }
@@ -68,15 +73,30 @@ export async function renderCeo(root, profile) {
     return h("div", null,
       h("section", { class: "card" }, h("h2", null, "오늘 한눈에"),
         totalBad > 0 ? h("p", { class: "err" }, `확인이 필요한 항목 ${totalBad}건`) : h("p", { class: "muted" }, "지금 밀린 항목이 없어요 👍")),
+      h("button", { class: "btn primary", style: "margin:8px 0", onclick: () => { tkOpen = true; draw(); } }, "📌 업무지시 (전 직원)"),
       h("div", { class: "list" }, ov.stores.map(card)),
       // 대표(마스터)만: 모든 사업장 계정을 한 곳에서 관리 (부대표는 전체 소속)
-      profile.role === "owner" && h("button", { class: "btn ghost", style: "margin-top:12px", onclick: () => { accountsOpen = true; draw(); } }, "👤 전체 계정 관리 (사업장·부대표 포함)"));
+      profile.role === "owner" && h("button", { class: "btn ghost", style: "margin-top:12px", onclick: () => { accountsOpen = true; draw(); } }, "👤 전체 계정 관리 (사업장·부대표 포함)"),
+      // 건의함은 대표만(부대표도 못 봄)
+      profile.role === "owner" && h("button", { class: "btn ghost", style: "margin-top:8px", onclick: () => { sgOpen = true; draw(); } }, `💌 건의함${sgNew > 0 ? ` (새 건의 ${sgNew})` : ""}`));
   }
 
   function accountsView() {
     const holder = h("div", { id: "ceo-accounts" });
     api.setStore(null);
     renderOwner(holder, profile, { allAccounts: true, stores, onBack: () => { accountsOpen = false; draw(); } });
+    return holder;
+  }
+
+  function tkView() {
+    const holder = h("div");
+    renderTasksAdmin(holder, () => { tkOpen = false; draw(); }, { all: true });
+    return holder;
+  }
+
+  function sgView() {
+    const holder = h("div");
+    renderSuggestAdmin(holder, () => { sgOpen = false; load(); });
     return holder;
   }
 
@@ -94,7 +114,7 @@ export async function renderCeo(root, profile) {
     root.replaceChildren(h("div", { class: "page", style: "padding-bottom:0" }, chips()),
       err ? h("div", { class: "page" }, h("p", { class: "err" }, "불러오기 실패: " + err), h("button", { class: "btn ghost", onclick: load }, "다시 시도"))
         : !ov ? h("div", { class: "page" }, h("p", { class: "muted" }, "불러오는 중…"))
-        : sel === "all" ? (accountsOpen ? accountsView() : h("div", { class: "page" }, allView())) : storeView());
+        : sel === "all" ? (tkOpen ? tkView() : sgOpen ? sgView() : accountsOpen ? accountsView() : h("div", { class: "page" }, allView())) : storeView());
     scrollTo(0, y);
   }
 

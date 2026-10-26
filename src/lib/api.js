@@ -41,6 +41,10 @@ const demo = {
   setStore(st) { curStore = st; },
   async changePassword() { throw new Error("데모 모드에서는 비밀번호를 바꿀 수 없어요"); },
   async tkMine() { throw new Error("데모 모드에서는 업무지시를 쓸 수 없어요"); },
+  async sgSend() { throw new Error("데모 모드에서는 건의함을 쓸 수 없어요"); },
+  async sgList() { return []; },
+  async sgSet() {},
+  async sgDelete() {},
   async wkList() { return []; },
   async wkSave() { throw new Error("데모 모드에서는 업무 기록을 쓸 수 없어요"); },
   async wkDelete() {},
@@ -239,12 +243,13 @@ const remote = {
 
   /* 업무지시 */
   tkMine() { return this.fn("tasks", { action: "mine" }); },
-  tkAll() { return this.fn("tasks", { action: "all" }); },
-  tkPeople() { return this.fn("tasks", { action: "people" }); },
-  tkCreate(f) { return this.fn("tasks", { action: "create", ...f }); },
+  // all=true: 사업장 구분 없이 전 직원 대상(대표·부대표)
+  tkAll(all = false) { return this.fn("tasks", { action: "all", all }); },
+  tkPeople(all = false) { return this.fn("tasks", { action: "people", all }); },
+  tkCreate(f, all = false) { return this.fn("tasks", { action: "create", all, ...f }); },
   tkComplete(id, note) { return this.fn("tasks", { action: "complete", id, note }); },
-  tkCancel(id) { return this.fn("tasks", { action: "cancel", id }); },
-  tkReopen(id) { return this.fn("tasks", { action: "reopen", id }); },
+  tkCancel(id, all = false) { return this.fn("tasks", { action: "cancel", id, all }); },
+  tkReopen(id, all = false) { return this.fn("tasks", { action: "reopen", id, all }); },
 
   /* CK 점검 체크리스트 */
   chkToday() { return this.fn("checklist", { action: "today" }); },
@@ -379,6 +384,19 @@ const remote = {
   },
   async stPatch(id, f) { const { error } = await (await sb()).from("receivables").update(f).eq("id", id); if (error) throw error; },
   async stDelete(id) { const { error } = await (await sb()).from("receivables").delete().eq("id", id); if (error) throw error; },
+  // 건의함: 직원은 보내기만, 읽기·처리는 대표만(RLS)
+  async sgSend(row) {
+    const p = await this.getProfile();
+    const { error } = await (await sb()).from("suggestions").insert({ store_id: p.store_id ?? null, author_id: p.user_id, author_name: p.display_name ?? "", anon: !!row.anon, category: row.category, body: row.body });
+    if (error) throw error;
+  },
+  async sgList() {
+    const { data, error } = await (await sb()).from("suggestions").select("*, stores(display_name,name)").order("created_at", { ascending: false }).limit(500);
+    if (error) throw error;
+    return data;
+  },
+  async sgSet(id, patch) { const { error } = await (await sb()).from("suggestions").update(patch).eq("id", id); if (error) throw error; },
+  async sgDelete(id) { const { error } = await (await sb()).from("suggestions").delete().eq("id", id); if (error) throw error; },
   // 업무 기록(일지·일정·기록함): table = work_logs | work_events | work_notes. 보이는 범위는 서버(RLS)가 정한다.
   async wkList(table) {
     const { data, error } = await (await sb()).from(table).select("*").eq("store_id", await this.storeId()).order("created_at", { ascending: false }).limit(500);
