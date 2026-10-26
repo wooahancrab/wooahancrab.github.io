@@ -41,6 +41,9 @@ const demo = {
   setStore(st) { curStore = st; },
   async changePassword() { throw new Error("데모 모드에서는 비밀번호를 바꿀 수 없어요"); },
   async tkMine() { throw new Error("데모 모드에서는 업무지시를 쓸 수 없어요"); },
+  async wkList() { return []; },
+  async wkSave() { throw new Error("데모 모드에서는 업무 기록을 쓸 수 없어요"); },
+  async wkDelete() {},
   async chkToday() { throw new Error("데모 모드에서는 점검 기능을 쓸 수 없어요"); },
   async listStores() { return DEMO_STORES; },
   async overview() {
@@ -376,6 +379,20 @@ const remote = {
   },
   async stPatch(id, f) { const { error } = await (await sb()).from("receivables").update(f).eq("id", id); if (error) throw error; },
   async stDelete(id) { const { error } = await (await sb()).from("receivables").delete().eq("id", id); if (error) throw error; },
+  // 업무 기록(일지·일정·기록함): table = work_logs | work_events | work_notes. 보이는 범위는 서버(RLS)가 정한다.
+  async wkList(table) {
+    const { data, error } = await (await sb()).from(table).select("*").eq("store_id", await this.storeId()).order("created_at", { ascending: false }).limit(500);
+    if (error) throw error;
+    return data;
+  },
+  async wkSave(table, row) {
+    const c = await sb();
+    if (row.id) { const { id, ...rest } = row; const { error } = await c.from(table).update(rest).eq("id", id); if (error) throw error; return; }
+    const p = await this.getProfile();
+    const { error } = await c.from(table).insert({ ...row, store_id: await this.storeId(), author_id: p.user_id, author_name: p.display_name ?? "" });
+    if (error) throw error;
+  },
+  async wkDelete(table, id) { const { error } = await (await sb()).from(table).delete().eq("id", id); if (error) throw error; },
   pushEnabled() { return !!LS.get("woo_push_on", false) && typeof Notification !== "undefined" && Notification.permission === "granted"; },
 };
 

@@ -10,6 +10,7 @@ import { renderChecklist } from "./screens/checklist.js";
 import { renderTasks } from "./screens/tasks.js";
 import { renderFinance } from "./screens/finance.js";
 import { renderShip } from "./screens/ship.js";
+import { renderWork } from "./screens/work.js";
 import { renderChecklistAdmin } from "./screens/checklist-admin.js";
 
 // 앱 종류: 우아한게장(기본)·CK·F&B·대표 총괄. 각 앱의 index.html 이 window.APP 로 알려 준다.
@@ -102,7 +103,7 @@ function tabbedHome(view, profile, tabs) {
   // 클레임은 식당(홀)만 받는다. CK·F&B 직원 화면에는 클레임 탭을 두지 않는다.
   if (profile.store_kind !== "restaurant") tabs = tabs.filter((t) => t[0] !== "cl");
   // F&B(본사 사무직): 업무지시를 받는 "업무" 탭
-  if (profile.store_kind === "hq") tabs = [["tk", "업무", renderTasks], ...tabs];
+  if (profile.store_kind === "hq") tabs = [["tk", "업무", renderTasks], ["wk", "기록", renderWork], ...tabs];
   // 정산 자료 올리기 권한이 있는 직원(경리·사무): 통장·정산 엑셀을 올리는 수금 대조 탭
   // 게장·F&B 두 사업장의 매출·지출, 통장·수금을 모두 본다(사업장 선택은 재무 탭 안에서)
   if (profile.can_settle && profile.store_kind === "hq") tabs = [...tabs, ["st", "재무", renderFinance], ["ship", "송장", renderShip]];
