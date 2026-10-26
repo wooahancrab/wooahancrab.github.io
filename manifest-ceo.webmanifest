@@ -1,0 +1,16 @@
+{
+  "id": "/ceo/",
+  "name": "우아한F&B 본사 (대표용)",
+  "short_name": "본사",
+  "lang": "ko",
+  "start_url": "/ceo/",
+  "scope": "/ceo/",
+  "display": "standalone",
+  "background_color": "#fffaf5",
+  "theme_color": "#2a2220",
+  "icons": [
+    { "src": "/icons/ceo-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/ceo-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/ceo-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
