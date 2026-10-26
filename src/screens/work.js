@@ -1,7 +1,7 @@
 // 업무 기록(일지·일정·기록함): 담당자가 자기 일을 쌓고, 대표·부대표·전무·경리가 한곳에서 본다.
 // 본인 것은 본인만 수정하고, 전체 보기 권한이 없으면 내 기록만 보인다(서버 RLS가 정함 — work-archive.sql).
 import { api } from "../lib/api.js";
-import { h, toast, modal, confirmDialog } from "../lib/ui.js";
+import { h, toast, modal, confirmDialog, copyText } from "../lib/ui.js";
 import { todayKST, labelMD } from "../lib/kst.js";
 
 const TABS = [["log", "📝 일지"], ["ev", "📅 일정"], ["note", "🗂 기록함"]];
@@ -105,26 +105,34 @@ export async function renderWork(root) {
 
   /* 기록함 */
   async function editNote(n) {
-    const t = input(n?.title, "제목 (예: ○○유통 단가 협의)"), b = area(n?.body, "내용·결정사항", 6), tg = input(n?.tags, "태그 (쉼표로 구분, 예: 거래처, 단가)"), lk = input(n?.link, "관련 링크 (선택)"), d = input(n?.note_date ?? today, "", "date");
+    const t = input(n?.title, "제목 (예: ○○유통 단가 협의)"), b = area(n?.body, "내용·결정사항", 6), tg = input(n?.tags, "태그 (쉼표로 구분, 예: 거래처, 단가)"), lk = area(n?.link, "링크나 NAS 경로를 한 줄에 하나씩\n예) https://…  또는  \\\\NAS\\영업\\단가표.xlsx", 3), d = input(n?.note_date ?? today, "", "date");
     for (;;) {
-      if (!(await modal(n ? "기록 수정" : "기록 추가", h("div", null, field("제목", t), field("날짜", d), field("내용", b), field("태그", tg), field("링크", lk)), "저장", "취소"))) return;
+      if (!(await modal(n ? "기록 수정" : "기록 추가", h("div", null, field("제목", t), field("날짜", d), field("내용", b), field("태그 (자주 쓰는 자료는 '고정'을 넣으면 맨 위에 나와요)", tg), field("자료 위치 (링크·NAS 경로)", lk)), "저장", "취소"))) return;
       if (!t.value.trim()) { toast("제목을 넣어 주세요"); continue; }
       if (await save("work_notes", { ...(n ? { id: n.id } : {}), title: t.value.trim(), body: b.value.trim(), tags: tg.value.trim(), link: lk.value.trim(), note_date: d.value || today })) return;
     }
   }
+  // 자료 위치: http 로 시작하면 링크, 아니면 NAS 경로로 보고 복사 버튼을 붙인다
+  const locs = (n) => String(n.link ?? "").split("\n").map((s) => s.trim()).filter(Boolean).map((s) => /^https?:\/\//i.test(s)
+    ? h("div", null, h("a", { href: s, target: "_blank", rel: "noopener" }, "🔗 " + s))
+    : h("div", null, "📁 " + s + " ", h("button", { class: "linkbtn", onclick: async () => { toast((await copyText(s)) ? "경로를 복사했어요. 탐색기 주소창에 붙여넣으세요" : "복사하지 못했어요", 3000); } }, "복사")));
   const noteView = () => {
     const key = q.trim().toLowerCase();
     const list = vis(data.work_notes).filter((n) => !key || [n.title, n.body, n.tags, n.author_name].join(" ").toLowerCase().includes(key))
       .sort((a, b) => b.note_date.localeCompare(a.note_date) || b.created_at.localeCompare(a.created_at));
     const search = h("input", { class: "inp", type: "search", placeholder: "검색 (제목·내용·태그)", value: q });
     search.oninput = () => { q = search.value; const pos = search.selectionStart; draw(); const s = root.querySelector('input[type="search"]'); s?.focus(); s?.setSelectionRange(pos, pos); };
-    return [h("button", { class: "btn primary", onclick: () => editNote() }, "＋ 기록 추가"), search,
+    const pinned = vis(data.work_notes).filter((n) => /(^|,)\s*고정\s*(,|$)/.test(n.tags));
+    return [h("button", { class: "btn primary", onclick: () => editNote() }, "＋ 기록 추가"),
+      pinned.length > 0 && h("div", { class: "card", style: "margin:8px 0;padding:10px 12px;border:1px solid #ddd;border-radius:12px;background:#fff8ee" },
+        h("b", null, "📌 자주 쓰는 자료"), pinned.map((n) => h("div", { style: "margin-top:6px" }, h("div", null, n.title), locs(n)))),
+      search,
       !list.length ? h("p", { class: "muted" }, key ? "찾는 기록이 없어요" : "기록이 없어요. 미팅 내용·협의·결정사항을 남겨 두면 나중에 검색해서 찾을 수 있어요.")
         : list.map((n) => h("details", { class: "card", style: "margin:8px 0;padding:10px 12px;border:1px solid #ddd;border-radius:12px" },
           h("summary", null, h("b", null, n.title), h("span", { class: "muted" }, `  ${labelMD(n.note_date)} · ${n.author_name}`),
             n.tags && h("div", { class: "muted", style: "font-size:12px" }, n.tags.split(",").map((x) => "#" + x.trim()).filter((x) => x.length > 1).join(" "))),
           n.body && h("div", { style: "white-space:pre-wrap;margin-top:6px" }, n.body),
-          n.link && h("div", null, h("a", { href: n.link, target: "_blank", rel: "noopener" }, n.link)),
+          locs(n),
           canEdit(n) && h("div", { style: "margin-top:6px" }, h("button", { class: "linkbtn", onclick: () => editNote(n) }, "수정"), "  ", h("button", { class: "linkbtn", onclick: () => remove("work_notes", n, n.title) }, "삭제"))))];
   };
 
