@@ -7,6 +7,7 @@ import { renderChecklistAdmin } from "./checklist-admin.js";
 import { renderTasksAdmin } from "./tasks-admin.js";
 import { renderSettle } from "./settle.js";
 import { renderSales } from "./sales.js";
+import { renderShip } from "./ship.js";
 import { attText, claimText, claimItems, checkText, kakaoText, summarize, normalize } from "../lib/report.js";
 
 export async function renderOwner(root, ctx, opts = {}) {
@@ -22,6 +23,7 @@ export async function renderOwner(root, ctx, opts = {}) {
   let showAtt = false;
   let showSettle = false;
   let showSales = false;
+  let showShip = false;
   let showCl = false;
   let showChk = false;
   let showTk = false;
@@ -76,6 +78,14 @@ export async function renderOwner(root, ctx, opts = {}) {
       const holder = h("div");
       root.replaceChildren(holder);
       renderSales(holder, () => { showSales = false; draw(); }, { master: isMaster, onOpenSettle: () => { showSales = false; showSettle = true; draw(); } });
+      scrollTo(0, 0);
+      return;
+    }
+    if (showShip) {
+      const holder = h("div", { class: "page", style: "padding-bottom:0" }, h("button", { class: "linkbtn back", onclick: () => { showShip = false; draw(); } }, "← 목록"));
+      const body = h("div");
+      root.replaceChildren(holder, body);
+      renderShip(body);
       scrollTo(0, 0);
       return;
     }
@@ -253,6 +263,7 @@ export async function renderOwner(root, ctx, opts = {}) {
         h("button", { class: "btn ghost slim", onclick: () => { showAtt = true; draw(); } }, "🕘 출퇴근"),
         ["fnb", "gejang"].includes(opts.store?.app_key) && h("button", { class: "btn ghost slim", onclick: () => { showSales = true; draw(); } }, "📊 매출·지출"),
         ["fnb", "gejang"].includes(opts.store?.app_key) && h("button", { class: "btn ghost slim", onclick: () => { showSettle = true; draw(); } }, "💰 통장·수금"),
+        opts.store?.app_key === "fnb" && h("button", { class: "btn ghost slim", onclick: () => { showShip = true; draw(); } }, "📦 송장"),
         isMaster && h("button", { class: "btn ghost slim", onclick: () => { showAccounts = true; loadUsers(); } }, "👤 계정")),
       clOpen && clOpen.length > 0 && h("button", { class: "item", style: "margin:4px 0 8px", onclick: () => { showCl = true; draw(); } },
         h("b", null, `처리 안 된 클레임 ${clOpen.length}건`),

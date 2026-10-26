@@ -9,6 +9,7 @@ import { renderAttendanceAdmin } from "./screens/attendance-admin.js";
 import { renderChecklist } from "./screens/checklist.js";
 import { renderTasks } from "./screens/tasks.js";
 import { renderFinance } from "./screens/finance.js";
+import { renderShip } from "./screens/ship.js";
 import { renderChecklistAdmin } from "./screens/checklist-admin.js";
 
 // 앱 종류: 우아한게장(기본)·CK·F&B·대표 총괄. 각 앱의 index.html 이 window.APP 로 알려 준다.
@@ -104,7 +105,7 @@ function tabbedHome(view, profile, tabs) {
   if (profile.store_kind === "hq") tabs = [["tk", "업무", renderTasks], ...tabs];
   // 정산 자료 올리기 권한이 있는 직원(경리·사무): 통장·정산 엑셀을 올리는 수금 대조 탭
   // 게장·F&B 두 사업장의 매출·지출, 통장·수금을 모두 본다(사업장 선택은 재무 탭 안에서)
-  if (profile.can_settle && profile.store_kind === "hq") tabs = [...tabs, ["st", "재무", renderFinance]];
+  if (profile.can_settle && profile.store_kind === "hq") tabs = [...tabs, ["st", "재무", renderFinance], ["ship", "송장", renderShip]];
   // CK: 작업자 점검 탭, 관리자(중간관리자·매니저)는 점검 현황 탭도
   if (profile.store_kind === "ck") {
     const extra = [["chk", "점검", renderChecklist]];
