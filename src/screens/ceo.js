@@ -1,7 +1,7 @@
 // 우아한F&B 본사(대표용) 총괄 앱: 3개 사업장의 오늘 현황을 한눈에 보고, 사업장을 눌러 관리·지시한다
 import { api } from "../lib/api.js";
 import { h, toast } from "../lib/ui.js";
-import { fmtHM } from "../lib/kst.js";
+import { fmtHM, dateOf, labelMD } from "../lib/kst.js";
 import { renderOwner } from "./owner.js";
 import { renderSuggestAdmin } from "./suggest.js";
 import { renderTasksAdmin } from "./tasks-admin.js";
@@ -17,6 +17,7 @@ export async function renderCeo(root, profile) {
   let accountsOpen = false; // 전체 계정 관리 화면
   let sgOpen = false, sgNew = 0; // 건의함 화면(대표만)
   let tkOpen = false; // 전 직원 업무지시 화면
+  let tk = null; // 업무지시 현황 {today, open, done}
   try { sel = localStorage.getItem("woo_ceo_sel") || "all"; } catch { /* 저장소를 못 쓰는 환경 */ }
 
   const badge = (t, c) => h("span", { class: "badge " + c }, t);
@@ -25,6 +26,7 @@ export async function renderCeo(root, profile) {
     try {
       [stores, ov] = await Promise.all([api.listStores(), api.overview()]);
       if (profile.role === "owner") sgNew = (await api.sgList().catch(() => [])).filter((r) => r.status === "새글").length;
+      tk = await api.tkAll(true).catch(() => null); // 전 직원 업무지시 현황(없으면 숨김)
       err = "";
       if (sel !== "all" && !stores.some((s) => s.id === sel)) sel = "all";
     } catch (e) { err = e.message; }
@@ -68,11 +70,33 @@ export async function renderCeo(root, profile) {
       alerts.length > 0 && h("div", { class: "badges", style: "justify-content:flex-start;margin-top:6px" }, alerts.map(([t, c]) => badge(t, c))));
   }
 
+  // 보고판: 업무지시(진행·밀림·완료)·일일보고·건의함을 한 화면에서 훑어본다. 타일을 누르면 해당 화면으로.
+  function board() {
+    const tile = (icon, title, big, sub, cls, onclick) => h("button", { class: "scard", style: "flex:1;min-width:130px;text-align:left", onclick },
+      h("div", { class: "muted", style: "font-size:12px" }, icon + " " + title), h("b", { class: cls, style: "font-size:20px" }, big), h("div", { class: "muted", style: "font-size:12px" }, sub));
+    const sname = (id) => SHORT[stores.find((s) => s.id === id)?.app_key] ?? "";
+    const open = tk?.open ?? [], late = open.filter((t) => t.due_date && t.due_date < tk.today);
+    const doneToday = (tk?.done ?? []).filter((t) => t.done_at && dateOf(t.done_at) === tk.today);
+    const reps = ov.stores.filter((s) => s.report && !s.closed), repOk = reps.filter((s) => s.report.submitted).length;
+    const recent = tk ? [
+      ...late.slice(0, 5).map((t) => ({ k: 0, icon: "⚠", cls: "err", text: `${sname(t.store_id)} ${t.assignee_name} · ${t.title}`, sub: `마감 ${labelMD(t.due_date)} 지남` })),
+      ...(tk.done ?? []).slice(0, 6).map((t) => ({ k: 1, icon: "✅", cls: "ok-text", text: `${sname(t.store_id)} ${t.done_by_name || t.assignee_name} · ${t.title}`, sub: `${labelMD(dateOf(t.done_at))} ${fmtHM(t.done_at)}${t.done_note ? " — " + t.done_note : ""}` })),
+    ] : [];
+    return h("div", null,
+      h("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin:10px 0" },
+        tk && tile("📌", "업무지시", `진행 ${open.length}건`, `밀림 ${late.length} · 오늘 완료 ${doneToday.length}`, late.length ? "err" : "", () => { tkOpen = true; draw(); }),
+        reps.length > 0 && tile("📝", "일일보고", `${repOk} / ${reps.length} 제출`, repOk === reps.length ? "모두 제출" : "미제출 " + reps.filter((s) => !s.report.submitted).map((s) => SHORT[s.app_key] ?? s.name).join(", "), repOk < reps.length ? "err" : "ok-text", () => choose(reps.find((s) => !s.report.submitted)?.id ?? reps[0].id)),
+        profile.role === "owner" && tile("💌", "건의함", sgNew ? `새 건의 ${sgNew}` : "새 건의 없음", "눌러서 보기", sgNew ? "err" : "", () => { sgOpen = true; draw(); })),
+      recent.length > 0 && h("div", null, h("div", { class: "muted", style: "font-size:12px;margin:4px 0" }, "최근 업무 보고"),
+        recent.map((r) => h("div", { class: "srow", style: "align-items:flex-start" }, h("span", { class: r.cls }, r.icon + " " + r.text, h("div", { class: "muted", style: "font-size:12px" }, r.sub))))));
+  }
+
   function allView() {
     const totalBad = ov.stores.reduce((s, st) => s + needs(st).filter(([, c]) => c === "bad").length, 0);
     return h("div", null,
       h("section", { class: "card" }, h("h2", null, "오늘 한눈에"),
-        totalBad > 0 ? h("p", { class: "err" }, `확인이 필요한 항목 ${totalBad}건`) : h("p", { class: "muted" }, "지금 밀린 항목이 없어요 👍")),
+        totalBad > 0 ? h("p", { class: "err" }, `확인이 필요한 항목 ${totalBad}건`) : h("p", { class: "muted" }, "지금 밀린 항목이 없어요 👍"),
+        board()),
       h("button", { class: "btn primary", style: "margin:8px 0", onclick: () => { tkOpen = true; draw(); } }, "📌 업무지시 (전 직원)"),
       h("div", { class: "list" }, ov.stores.map(card)),
       // 대표(마스터)만: 모든 사업장 계정을 한 곳에서 관리 (부대표는 전체 소속)
