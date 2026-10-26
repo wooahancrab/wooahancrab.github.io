@@ -12,6 +12,7 @@ export async function renderCeo(root, profile) {
   let ov = null;
   let err = "";
   let sel = "all";
+  let accountsOpen = false; // 전체 계정 관리 화면
   try { sel = localStorage.getItem("woo_ceo_sel") || "all"; } catch { /* 저장소를 못 쓰는 환경 */ }
 
   const badge = (t, c) => h("span", { class: "badge " + c }, t);
@@ -67,7 +68,16 @@ export async function renderCeo(root, profile) {
     return h("div", null,
       h("section", { class: "card" }, h("h2", null, "오늘 한눈에"),
         totalBad > 0 ? h("p", { class: "err" }, `확인이 필요한 항목 ${totalBad}건`) : h("p", { class: "muted" }, "지금 밀린 항목이 없어요 👍")),
-      h("div", { class: "list" }, ov.stores.map(card)));
+      h("div", { class: "list" }, ov.stores.map(card)),
+      // 대표(마스터)만: 모든 사업장 계정을 한 곳에서 관리 (부대표는 전체 소속)
+      profile.role === "owner" && h("button", { class: "btn ghost", style: "margin-top:12px", onclick: () => { accountsOpen = true; draw(); } }, "👤 전체 계정 관리 (사업장·부대표 포함)"));
+  }
+
+  function accountsView() {
+    const holder = h("div", { id: "ceo-accounts" });
+    api.setStore(null);
+    renderOwner(holder, profile, { allAccounts: true, stores, onBack: () => { accountsOpen = false; draw(); } });
+    return holder;
   }
 
   function storeView() {
@@ -84,7 +94,7 @@ export async function renderCeo(root, profile) {
     root.replaceChildren(h("div", { class: "page", style: "padding-bottom:0" }, chips()),
       err ? h("div", { class: "page" }, h("p", { class: "err" }, "불러오기 실패: " + err), h("button", { class: "btn ghost", onclick: load }, "다시 시도"))
         : !ov ? h("div", { class: "page" }, h("p", { class: "muted" }, "불러오는 중…"))
-        : sel === "all" ? h("div", { class: "page" }, allView()) : storeView());
+        : sel === "all" ? (accountsOpen ? accountsView() : h("div", { class: "page" }, allView())) : storeView());
     scrollTo(0, y);
   }
 

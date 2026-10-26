@@ -72,6 +72,8 @@ const demo = {
   ...claimsDemo,
   async stRecv() { return LS.get("woo_demo_recv", []); },
   async stDeps() { return LS.get("woo_demo_deps", []); },
+  async stWds() { return []; },
+  async stAddWds() { return 0; },
   async stAddRecv(rows) {
     const all = LS.get("woo_demo_recv", []); const have = new Set(all.map((r) => r.ref)); let n = 0;
     for (const r of rows) if (!have.has(r.ref)) { all.push({ id: "r" + Math.random().toString(36).slice(2), closed: false, dunned_at: null, ...r }); n++; }
@@ -319,6 +321,21 @@ const remote = {
     for (let i = 0; i < rows.length; i += 500) {
       const part = rows.slice(i, i + 500).map((r) => ({ store_id, dep_date: r.date, amount: r.amount, memo: r.memo ?? "", ref: r.ref }));
       const { data, error } = await c.from("bank_deposits").upsert(part, { onConflict: "store_id,ref", ignoreDuplicates: true }).select("id");
+      if (error) throw error; n += data.length;
+    }
+    return n;
+  },
+  // 통장 출금(지출) 내역
+  async stWds() {
+    const { data, error } = await (await sb()).from("bank_withdrawals").select("id,wd_date,amount,memo").eq("store_id", await this.storeId()).order("wd_date");
+    if (error) throw error;
+    return data.map((d) => ({ id: d.id, date: d.wd_date, amount: d.amount, memo: d.memo }));
+  },
+  async stAddWds(rows) {
+    const c = await sb(), store_id = await this.storeId(); let n = 0;
+    for (let i = 0; i < rows.length; i += 500) {
+      const part = rows.slice(i, i + 500).map((r) => ({ store_id, wd_date: r.date, amount: r.amount, memo: r.memo ?? "", ref: r.ref }));
+      const { data, error } = await c.from("bank_withdrawals").upsert(part, { onConflict: "store_id,ref", ignoreDuplicates: true }).select("id");
       if (error) throw error; n += data.length;
     }
     return n;

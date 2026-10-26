@@ -18,7 +18,7 @@ export async function renderOwner(root, ctx, opts = {}) {
   let rows = [];
   let loading = true;
   let err = null;
-  let showAccounts = false;
+  let showAccounts = !!opts.allAccounts; // 총괄 앱의 "전체 계정" 화면이면 처음부터 계정 화면
   let showAtt = false;
   let showSettle = false;
   let showSales = false;
@@ -37,6 +37,13 @@ export async function renderOwner(root, ctx, opts = {}) {
     return Array.from(a, (n) => ch[n % ch.length]).join("");
   };
   const newAcc = { name: "", title: "", email: "", password: "", password2: "", role: "manager" };
+  // 전체 계정 화면에서 새 계정을 어느 사업장에 넣을지 (부대표는 사업장 없이 전체 소속)
+  const pick = { store: opts.stores?.[0]?.id ?? null };
+  const storeName = (id) => opts.stores?.find((s) => s.id === id)?.display_name ?? "";
+  const storePicker = () => opts.allAccounts && opts.stores?.length
+    ? h("div", { class: "stack" }, h("label", { class: "lbl" }, "소속 사업장 (부대표는 전체 소속이라 무시돼요)"),
+        seg(opts.stores.map((s) => [s.id, s.display_name || s.name]), pick.store, (v) => { pick.store = v; draw(); }))
+    : null;
   const ROLE_KO = { owner: "대표", deputy: "부대표", manager: "매니저", supervisor: "중간관리자", staff: "직원" };
   const isMaster = ctx.role === "owner"; // 부대표는 계정·설정을 바꿀 수 없다
 
@@ -145,7 +152,7 @@ export async function renderOwner(root, ctx, opts = {}) {
 
   // 여러 명 한 번에: 한 줄에 "이름 직책(선택)". 이메일은 사업장키+번호로 자동, 비밀번호는 자동 생성
   async function bulkAdd() {
-    const key = opts.store?.app_key || "staff";
+    const key = (opts.allAccounts ? opts.stores?.find((s) => s.id === pick.store)?.app_key : opts.store?.app_key) || "staff";
     const lines = bulk.text.split("\n").map((s) => s.trim()).filter(Boolean);
     if (!lines.length) { toast("이름을 한 줄에 한 명씩 적어 주세요"); return; }
     let n = users.reduce((m, u) => { const x = new RegExp("^" + key + "(\\d+)@woo-ahan\\.com$").exec(u.email ?? ""); return x ? Math.max(m, Number(x[1])) : m; }, 0);
@@ -155,7 +162,7 @@ export async function renderOwner(root, ctx, opts = {}) {
       const email = `${key}${String(++n).padStart(2, "0")}@woo-ahan.com`;
       const password = genPw();
       try {
-        await api.adminUsers({ action: "create", email, password, role: bulk.role, display_name: name, job_title: rest.join(" ") });
+        await api.adminUsers({ action: "create", email, password, role: bulk.role, display_name: name, job_title: rest.join(" "), ...(opts.allAccounts && pick.store ? { store_id: pick.store } : {}) });
         bulk.result.push({ name, email, password, ok: true });
       } catch (e) { bulk.result.push({ name, email, ok: false, err: e.message }); }
     }
@@ -163,15 +170,25 @@ export async function renderOwner(root, ctx, opts = {}) {
     await loadUsers();
   }
 
+  // 소속별로 묶기: 대표·부대표는 "전체", 나머지는 사업장별. (사업장 하나만 보는 화면에서는 한 덩어리)
+  function groupedUsers() {
+    if (!opts.allAccounts) return [["계정", users]];
+    const groups = [["전체 (마스터·부대표)", users.filter((u) => u.role === "owner" || u.role === "deputy")]];
+    for (const s of opts.stores ?? []) groups.push([s.display_name || s.name, users.filter((u) => u.role !== "owner" && u.role !== "deputy" && u.store_id === s.id)]);
+    const rest = users.filter((u) => u.role !== "owner" && u.role !== "deputy" && !(opts.stores ?? []).some((s) => s.id === u.store_id));
+    if (rest.length) groups.push(["소속 없음", rest]);
+    return groups;
+  }
+
   function accountsView() {
     matchHint();
     return h("div", { class: "page" },
-      h("button", { class: "linkbtn back", onclick: () => { showAccounts = false; draw(); } }, "← 목록"),
-      h("h1", null, "계정 관리"),
+      h("button", { class: "linkbtn back", onclick: () => { if (opts.allAccounts) opts.onBack?.(); else { showAccounts = false; draw(); } } }, "← 목록"),
+      h("h1", null, opts.allAccounts ? "전체 계정 관리" : "계정 관리"),
       h("p", { class: "muted" }, "비밀번호는 저장되지 않아요(자동 생성한 임시 비밀번호는 만든 직후 한 번만 보여요). 잊으면 새로 정해 주세요."),
       usersBusy && h("p", { class: "muted" }, "불러오는 중…"),
       usersMsg && h("p", { class: "err" }, usersMsg),
-      h("div", { class: "list" }, users.map((u) => h("div", { class: "acc" },
+      ...groupedUsers().map(([label, list]) => [h("h2", { style: "margin-top:14px" }, `${label} (${list.length}명)`), h("div", { class: "list" }, list.map((u) => h("div", { class: "acc" },
         h("div", null, h("b", null, u.display_name || "(이름 없음)"), u.job_title && h("span", { class: "muted" }, " · " + u.job_title), " ", h("span", { class: "badge ok" }, ROLE_KO[u.role] ?? "역할 없음")),
         h("div", { class: "muted" }, u.email),
         u.last_sign_in_at && h("div", { class: "muted" }, "마지막 로그인 " + new Date(u.last_sign_in_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })),
@@ -184,9 +201,10 @@ export async function renderOwner(root, ctx, opts = {}) {
           u.role !== "owner" && h("button", { class: "btn ghost slim danger", onclick: async () => {
             const go = await confirmDialog("계정을 삭제할까요?", [`${u.display_name || ""} ${u.email}`.trim(), "삭제하면 로그인할 수 없어요 (제출한 보고는 남아요)"], "취소", "삭제");
             if (go) await userAction({ action: "remove", user_id: u.id }, "삭제했어요");
-          } }, "삭제"))))),
+          } }, "삭제")))))]).flat(),
       h("section", { class: "card" }, h("h2", null, "여러 명 한 번에 추가"),
         h("p", { class: "muted" }, "한 줄에 한 명씩 \"이름 직책\"(직책은 생략 가능). 이메일과 임시 비밀번호는 자동으로 만들어요."),
+        storePicker(),
         h("textarea", { class: "inp", rows: "4", placeholder: "김철수 주방\n이영희 포장", value: bulk.text, oninput: (e) => (bulk.text = e.target.value) }),
         seg([["staff", "직원"], ["supervisor", "중간관리자"], ["manager", "매니저"], ["deputy", "부대표"]], bulk.role, (v) => { bulk.role = v; draw(); }),
         h("button", { class: "btn primary", disabled: bulk.busy, onclick: bulkAdd }, bulk.busy ? "만드는 중…" : "계정 만들기"),
@@ -195,6 +213,7 @@ export async function renderOwner(root, ctx, opts = {}) {
           h("pre", { class: "kakao" }, bulk.result.map((r) => r.ok ? `${r.name}\n  이메일: ${r.email}\n  비밀번호: ${r.password}` : `${r.name}: 실패 — ${r.err}`).join("\n\n")),
           h("button", { class: "btn ghost", onclick: async () => toast((await copyText(bulk.result.filter((r) => r.ok).map((r) => `${r.name} / ${r.email} / ${r.password}`).join("\n"))) ? "복사했어요" : "복사 실패") }, "전체 복사"))),
       h("section", { class: "card" }, h("h2", null, "계정 한 명 추가"),
+        storePicker(),
         h("input", { type: "text", class: "inp", placeholder: "이름", value: newAcc.name, oninput: (e) => (newAcc.name = e.target.value) }),
         h("input", { type: "text", class: "inp", placeholder: "직책 (예: 홀 서버, 주방, 매니저)", value: newAcc.title, maxlength: "30", oninput: (e) => (newAcc.title = e.target.value) }),
         h("input", { type: "email", class: "inp", placeholder: "이메일 (로그인 ID)", value: newAcc.email, autocomplete: "off", inputmode: "email", oninput: (e) => (newAcc.email = e.target.value) }),
@@ -207,7 +226,7 @@ export async function renderOwner(root, ctx, opts = {}) {
         h("button", { class: "btn primary", onclick: async () => {
           if (newAcc.password.length < 8) { toast("비밀번호는 8자 이상이어야 해요"); return; }
           if (newAcc.password !== newAcc.password2) { toast("두 비밀번호가 서로 달라요. 다시 확인해 주세요", 4000); return; }
-          const ok = await userAction({ action: "create", email: newAcc.email, password: newAcc.password, role: newAcc.role, display_name: newAcc.name, job_title: newAcc.title }, "계정을 만들었어요");
+          const ok = await userAction({ action: "create", email: newAcc.email, password: newAcc.password, role: newAcc.role, display_name: newAcc.name, job_title: newAcc.title, ...(opts.allAccounts && pick.store ? { store_id: pick.store } : {}) }, "계정을 만들었어요");
           if (ok) { newAcc.name = newAcc.title = newAcc.email = newAcc.password = newAcc.password2 = ""; draw(); }
         } }, "추가")));
   }
@@ -232,8 +251,8 @@ export async function renderOwner(root, ctx, opts = {}) {
         opts.store?.kind === "hq" && h("button", { class: "btn ghost slim", onclick: () => { showTk = true; draw(); } }, "📌 업무지시"),
         opts.store?.kind === "ck" && h("button", { class: "btn ghost slim", onclick: () => { showChk = true; draw(); } }, "📋 점검"),
         h("button", { class: "btn ghost slim", onclick: () => { showAtt = true; draw(); } }, "🕘 출퇴근"),
-        opts.store?.app_key === "fnb" && h("button", { class: "btn ghost slim", onclick: () => { showSales = true; draw(); } }, "📊 매출"),
-        opts.store?.app_key === "fnb" && h("button", { class: "btn ghost slim", onclick: () => { showSettle = true; draw(); } }, "💰 수금"),
+        ["fnb", "gejang"].includes(opts.store?.app_key) && h("button", { class: "btn ghost slim", onclick: () => { showSales = true; draw(); } }, "📊 매출·지출"),
+        ["fnb", "gejang"].includes(opts.store?.app_key) && h("button", { class: "btn ghost slim", onclick: () => { showSettle = true; draw(); } }, "💰 통장·수금"),
         isMaster && h("button", { class: "btn ghost slim", onclick: () => { showAccounts = true; loadUsers(); } }, "👤 계정")),
       clOpen && clOpen.length > 0 && h("button", { class: "item", style: "margin:4px 0 8px", onclick: () => { showCl = true; draw(); } },
         h("b", null, `처리 안 된 클레임 ${clOpen.length}건`),
@@ -315,6 +334,7 @@ export async function renderOwner(root, ctx, opts = {}) {
     return h("div", { class: "page" }, h("button", { class: "linkbtn back", onclick: () => { detail = null; draw(); } }, "← 목록"), h("h1", null, labelMD(date)), body);
   }
 
+  if (opts.allAccounts) { draw(); await loadUsers(); return; } // 전체 계정 화면: 보고·클레임 불러오기 없이 계정만
   draw();
   if (hasReport) loadCl();
   // 푸시 알림에서 열린 경우 ?d=날짜 상세로

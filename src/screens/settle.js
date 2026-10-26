@@ -2,6 +2,7 @@
 import { api } from "../lib/api.js";
 import { h, toast, copyText, confirmDialog } from "../lib/ui.js";
 import { todayKST, addDays } from "../lib/kst.js";
+import { parseBankStatement } from "../lib/bank.js";
 import { SOURCES, won, reconcile, summarize, parseBank, parseInvoice, parseSettle, parseDolsoe, parseGrip, dunText, toDate } from "../lib/settle.js";
 
 const XLSX_URL = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
@@ -14,11 +15,12 @@ function loadXlsx() {
     document.head.append(s);
   }));
 }
-async function readSheet(file) { // 첫 시트를 2차원 배열로
+async function readBook(file) { // 모든 시트를 2차원 배열의 배열로
   const X = await loadXlsx();
   const wb = X.read(await file.arrayBuffer(), { type: "array", cellDates: true });
-  return X.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: true, defval: "" });
+  return wb.SheetNames.map((n) => X.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: "" }));
 }
+async function readSheet(file) { return (await readBook(file))[0]; } // 첫 시트
 
 const STATUS = {
   overdue: ["미입금", "err"], diff: ["금액 다름", "err"], waiting: ["입금 대기", "muted"],
@@ -40,23 +42,24 @@ export async function renderSettle(root, onBack) {
     return reconcile(recv, deps, { today });
   }
 
-  async function pickFile(accept, handler) {
+  async function pickFile(accept, handler, allSheets = false) {
     const inp = h("input", { type: "file", accept, style: "display:none" });
     inp.onchange = async () => {
       const f = inp.files[0]; if (!f) return;
       busy = true; draw();
-      try { await handler(await readSheet(f)); } catch (e) { toast(e.message, 6000); }
+      try { await handler(allSheets ? await readBook(f) : await readSheet(f)); } catch (e) { toast(e.message, 6000); }
       busy = false; await load();
     };
     document.body.append(inp); inp.click(); setTimeout(() => inp.remove(), 60000);
   }
 
-  const upBank = () => pickFile(".xlsx,.xls,.csv", async (rows) => {
-    const list = parseBank(rows); const seen = new Map();
-    const withRef = list.map((d) => { const k = `${d.date}|${d.amount}|${d.memo}`; const n = (seen.get(k) ?? 0) + 1; seen.set(k, n); return { ...d, ref: `${k}|${n}` }; });
-    const n = await api.stAddDeps(withRef);
-    toast(`입금 ${list.length}건 중 새로 ${n}건 반영했어요`);
-  });
+  // 통장 거래내역: 입금은 수금 대조·매출에, 출금은 지출 분석에 쓴다. 시트가 여러 개거나 겹쳐도 중복 없이 한 번만 반영한다.
+  const upBank = () => pickFile(".xlsx,.xls,.csv,.nxl", async (sheets) => {
+    const r = parseBankStatement(sheets);
+    const nIn = await api.stAddDeps(r.deposits.map((d) => ({ date: d.date, amount: d.amount, memo: d.memo, ref: d.ref })));
+    const nOut = await api.stAddWds(r.withdrawals);
+    toast(`입금 ${r.deposits.length}건 중 새로 ${nIn}건, 출금 ${r.withdrawals.length}건 중 새로 ${nOut}건 반영했어요`, 6000);
+  }, true);
   const upSettle = (source) => pickFile(".xlsx,.xls,.csv", async (rows) => {
     const list = parseSettle(rows, source);
     toast(`${SOURCES[source].label} 정산 ${list.length}일치 중 새로 ${await api.stAddRecv(list)}건 반영했어요`);
