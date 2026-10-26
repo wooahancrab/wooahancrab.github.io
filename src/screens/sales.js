@@ -41,7 +41,8 @@ export async function renderSales(root, onBack, opts = {}) {
   async function unassign(keyword) {
     try { await api.stDelRule(keyword); toast("규칙을 지웠어요", 2000); await load(); } catch (e) { toast(e.message, 5000); }
   }
- h("div", { style: "flex:1;min-width:130px;padding:10px;border:1px solid #ddd;border-radius:12px" },
+  const stat = (t, v, sub, cls = "") =>
+    h("div", { style: "flex:1;min-width:130px;padding:10px;border:1px solid #ddd;border-radius:12px" },
     h("div", { class: "muted", style: "font-size:12px" }, t), h("b", { class: cls, style: "font-size:17px" }, v), sub && h("div", { class: "muted", style: "font-size:12px" }, sub));
 
   function draw() {
