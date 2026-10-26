@@ -7,7 +7,11 @@ import { todayKST, labelMD } from "../lib/kst.js";
 const TABS = [["log", "📝 일지"], ["ev", "📅 일정"], ["note", "🗂 기록함"]];
 const TABLE = { log: "work_logs", ev: "work_events", note: "work_notes" };
 
-export async function renderWork(root) {
+const SHORT = { gejang: "게장", ck: "CK", fnb: "F&B" };
+
+export async function renderWork(root, opts = {}) {
+  const RO = !!opts.all; // 대표·부대표 보고판용: 전 사업장 보기(새 글 쓰기는 숨김)
+  const sn = (r) => (RO ? (SHORT[(opts.stores ?? []).find((s) => s.id === r.store_id)?.app_key] ?? "") + " " : "");
   const prof = await api.getProfile();
   const me = prof.user_id;
   const viewer = prof.role === "owner" || prof.role === "deputy" || !!prof.can_settle;
@@ -17,7 +21,7 @@ export async function renderWork(root) {
 
   async function load() {
     try {
-      const [a, b, c] = await Promise.all(["work_logs", "work_events", "work_notes"].map((t) => api.wkList(t)));
+      const [a, b, c] = await Promise.all(["work_logs", "work_events", "work_notes"].map((t) => api.wkList(t, RO)));
       data = { work_logs: a, work_events: b, work_notes: c }; err = "";
     } catch (e) { err = e.message; }
     loading = false; draw();
@@ -57,10 +61,10 @@ export async function renderWork(root) {
     const list = vis(data.work_logs).sort((a, b) => b.log_date.localeCompare(a.log_date));
     const todayMine = data.work_logs.find((r) => r.author_id === me && r.log_date === today);
     return [
-      h("button", { class: "btn primary", onclick: () => editLog() }, todayMine ? "✏ 오늘 일지 고치기" : "✏ 오늘 일지 쓰기"),
+      !RO && h("button", { class: "btn primary", onclick: () => editLog() }, todayMine ? "✏ 오늘 일지 고치기" : "✏ 오늘 일지 쓰기"),
       !list.length ? h("p", { class: "muted" }, "아직 일지가 없어요. 하루 끝에 한 일·내일 할 일을 몇 줄 남겨 보세요.")
         : list.map((r) => h("div", { class: "card", style: "margin:8px 0;padding:12px;border:1px solid #ddd;border-radius:12px" },
-          h("div", { style: "display:flex;justify-content:space-between" }, h("b", null, labelMD(r.log_date)), h("span", { class: "muted" }, r.author_name)),
+          h("div", { style: "display:flex;justify-content:space-between" }, h("b", null, labelMD(r.log_date)), h("span", { class: "muted" }, sn(r) + r.author_name)),
           r.done && h("div", { style: "white-space:pre-wrap;margin-top:6px" }, h("b", null, "한 일  "), r.done),
           r.plan && h("div", { style: "white-space:pre-wrap;margin-top:4px" }, h("b", null, "내일  "), r.plan),
           r.blockers && h("div", { class: "err", style: "white-space:pre-wrap;margin-top:4px" }, "막힌 점  " + r.blockers),
@@ -85,7 +89,7 @@ export async function renderWork(root) {
   }
   const evCard = (r) => h("div", { class: "card", style: "margin:8px 0;padding:12px;border:1px solid #ddd;border-radius:12px" + (r.done ? ";opacity:.75" : "") },
     h("div", { style: "display:flex;justify-content:space-between;gap:8px" },
-      h("b", null, `${labelMD(r.ev_date)}${r.ev_time ? " " + r.ev_time : ""} · ${r.title}`), h("span", { class: "muted" }, r.author_name)),
+      h("b", null, `${labelMD(r.ev_date)}${r.ev_time ? " " + r.ev_time : ""} · ${r.title}`), h("span", { class: "muted" }, sn(r) + r.author_name)),
     r.place && h("div", { class: "muted" }, "📍 " + r.place),
     r.note && h("div", { style: "white-space:pre-wrap" }, r.note),
     r.done && h("div", { class: "ok-text", style: "white-space:pre-wrap" }, "✔ " + (r.result || "완료")),
@@ -98,7 +102,7 @@ export async function renderWork(root) {
     const late = all.filter((r) => !r.done && r.ev_date < today).sort((a, b) => a.ev_date.localeCompare(b.ev_date));
     const past = all.filter((r) => r.done).sort((a, b) => b.ev_date.localeCompare(a.ev_date)).slice(0, 40);
     const sec = (t, l, cls = "") => l.length > 0 && h("div", null, h("div", { class: "cat-title " + cls }, t), l.map(evCard));
-    return [h("button", { class: "btn primary", onclick: () => editEv() }, "＋ 일정 추가"),
+    return [!RO && h("button", { class: "btn primary", onclick: () => editEv() }, "＋ 일정 추가"),
       !all.length && h("p", { class: "muted" }, "등록된 일정이 없어요. 미팅·납기·마감을 날짜와 함께 넣어 두세요."),
       sec("⚠ 지났는데 결과가 없는 일정", late, "err"), sec("예정", up), sec("완료·지난 일정", past)];
   };
@@ -123,13 +127,13 @@ export async function renderWork(root) {
     const search = h("input", { class: "inp", type: "search", placeholder: "검색 (제목·내용·태그)", value: q });
     search.oninput = () => { q = search.value; const pos = search.selectionStart; draw(); const s = root.querySelector('input[type="search"]'); s?.focus(); s?.setSelectionRange(pos, pos); };
     const pinned = vis(data.work_notes).filter((n) => /(^|,)\s*고정\s*(,|$)/.test(n.tags));
-    return [h("button", { class: "btn primary", onclick: () => editNote() }, "＋ 기록 추가"),
+    return [!RO && h("button", { class: "btn primary", onclick: () => editNote() }, "＋ 기록 추가"),
       pinned.length > 0 && h("div", { class: "card", style: "margin:8px 0;padding:10px 12px;border:1px solid #ddd;border-radius:12px;background:#fff8ee" },
         h("b", null, "📌 자주 쓰는 자료"), pinned.map((n) => h("div", { style: "margin-top:6px" }, h("div", null, n.title), locs(n)))),
       search,
       !list.length ? h("p", { class: "muted" }, key ? "찾는 기록이 없어요" : "기록이 없어요. 미팅 내용·협의·결정사항을 남겨 두면 나중에 검색해서 찾을 수 있어요.")
         : list.map((n) => h("details", { class: "card", style: "margin:8px 0;padding:10px 12px;border:1px solid #ddd;border-radius:12px" },
-          h("summary", null, h("b", null, n.title), h("span", { class: "muted" }, `  ${labelMD(n.note_date)} · ${n.author_name}`),
+          h("summary", null, h("b", null, n.title), h("span", { class: "muted" }, `  ${labelMD(n.note_date)} · ${sn(n)}${n.author_name}`),
             n.tags && h("div", { class: "muted", style: "font-size:12px" }, n.tags.split(",").map((x) => "#" + x.trim()).filter((x) => x.length > 1).join(" "))),
           n.body && h("div", { style: "white-space:pre-wrap;margin-top:6px" }, n.body),
           locs(n),
@@ -140,6 +144,7 @@ export async function renderWork(root) {
     const y = scrollY;
     const people = authors();
     root.replaceChildren(h("div", { class: "page" },
+      opts.onBack && h("button", { class: "linkbtn back", onclick: opts.onBack }, "← 목록"),
       h("h1", null, "🗂 업무 기록"),
       h("p", { class: "muted", style: "font-size:12px" }, viewer ? "전체 기록을 볼 수 있어요. 수정·삭제는 쓴 사람만 해요." : "내가 쓴 기록만 보여요. 대표·전무가 함께 봐요."),
       h("div", { class: "tabs" }, TABS.map(([k, l]) => h("button", { class: "tab" + (tab === k ? " on" : ""), onclick: () => { tab = k; draw(); } }, l))),

@@ -12,6 +12,7 @@ import { renderFinance } from "./screens/finance.js";
 import { renderShip } from "./screens/ship.js";
 import { renderWork } from "./screens/work.js";
 import { renderSuggest } from "./screens/suggest.js";
+import { renderLibrary } from "./screens/library.js";
 import { renderChecklistAdmin } from "./screens/checklist-admin.js";
 
 // 앱 종류: 우아한게장(기본)·CK·F&B·대표 총괄. 각 앱의 index.html 이 window.APP 로 알려 준다.
@@ -106,7 +107,7 @@ function tabbedHome(view, profile, tabs) {
   // F&B(본사 사무직): 업무지시를 받는 "업무" 탭
   // 업무지시는 대표·부대표가 전 직원에게 개별로 내린다 → 모든 직원에게 "업무" 탭. 기록(일지·일정)은 F&B 본사만.
   if (profile.store_kind === "hq") tabs = [["tk", "업무", renderTasks], ["wk", "기록", renderWork], ...tabs];
-  else tabs = [...tabs, ["tk", "업무", renderTasks]]; // 식당·CK 직원은 기존 첫 화면(출퇴근·보고·점검)을 그대로 두고 맨 뒤에
+  else tabs = [...tabs, ["tk", "업무", renderTasks], ["wk", "기록", renderWork]]; // 식당·CK 직원은 기존 첫 화면(출퇴근·보고·점검)을 그대로 두고 맨 뒤에
   // 정산 자료 올리기 권한이 있는 직원(경리·사무): 통장·정산 엑셀을 올리는 수금 대조 탭
   // 게장·F&B 두 사업장의 매출·지출, 통장·수금을 모두 본다(사업장 선택은 재무 탭 안에서)
   if (profile.can_settle && profile.store_kind === "hq") tabs = [...tabs, ["st", "재무", renderFinance], ["ship", "송장", renderShip]];
@@ -116,7 +117,7 @@ function tabbedHome(view, profile, tabs) {
     if (profile.role === "supervisor" || profile.role === "manager") extra.push(["chkb", "점검 현황", (pane) => renderChecklistAdmin(pane, null, { master: false, itemsView: false })]);
     tabs = [...extra, ...tabs];
   }
-  tabs = [...tabs, ["sg", "건의", renderSuggest]]; // 건의함: 모든 직원이 대표에게 보낸다
+  tabs = [...tabs, ["lib", "자료", renderLibrary], ["sg", "건의", renderSuggest]]; // 자료함(서식·파일), 건의함: 모든 직원
   let tab = tabs[0][0];
   const body = h("div", { id: "mbody" });
   const bar = h("div", { class: "page", style: "padding-bottom:0" });

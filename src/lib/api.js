@@ -45,6 +45,10 @@ const demo = {
   async sgList() { return []; },
   async sgSet() {},
   async sgDelete() {},
+  async libList() { return []; },
+  async libUpload() { throw new Error("데모 모드에서는 파일을 올릴 수 없어요"); },
+  async libUrl() { throw new Error("데모 모드에서는 파일을 열 수 없어요"); },
+  async libDelete() {},
   async wkList() { return []; },
   async wkSave() { throw new Error("데모 모드에서는 업무 기록을 쓸 수 없어요"); },
   async wkDelete() {},
@@ -384,6 +388,35 @@ const remote = {
   },
   async stPatch(id, f) { const { error } = await (await sb()).from("receivables").update(f).eq("id", id); if (error) throw error; },
   async stDelete(id) { const { error } = await (await sb()).from("receivables").delete().eq("id", id); if (error) throw error; },
+  // 서식·자료함: 파일은 Storage(library), 목록·권한은 library_files(RLS). 보이는 것만 서버가 내려준다.
+  async libList() {
+    const { data, error } = await (await sb()).from("library_files").select("*, stores(display_name,name)").order("created_at", { ascending: false }).limit(1000);
+    if (error) throw error;
+    return data;
+  },
+  async libUpload(file, meta) { // meta: {title, folder, note, audience, store_id}
+    const c = await sb(), p = await this.getProfile();
+    if (file.size > 20 * 1024 * 1024) throw new Error("파일 하나는 20MB까지 올릴 수 있어요");
+    const ext = (file.name.match(/\.[A-Za-z0-9]{1,8}$/) ?? [""])[0].toLowerCase();
+    const path = `${crypto.randomUUID()}${ext}`; // 보관함에는 한글 이름 대신 번호로 저장하고, 원래 이름은 표에 남긴다
+    const up = await c.storage.from("library").upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
+    if (up.error) throw up.error;
+    const { error } = await c.from("library_files").insert({
+      store_id: meta.store_id ?? null, folder: meta.folder, title: meta.title, file_name: file.name, note: meta.note ?? "", path,
+      size: file.size, mime: file.type || "", audience: meta.audience, uploaded_by: p.user_id, uploaded_name: p.display_name ?? "",
+    });
+    if (error) { await c.storage.from("library").remove([path]); throw error; }
+  },
+  async libUrl(row, download = false) { // 60초짜리 임시 주소(로그인한 사람만 만들 수 있음)
+    const { data, error } = await (await sb()).storage.from("library").createSignedUrl(row.path, 60, download ? { download: row.file_name || true } : undefined);
+    if (error) throw error;
+    return data.signedUrl;
+  },
+  async libDelete(row) {
+    const c = await sb();
+    const r = await c.storage.from("library").remove([row.path]); if (r.error) throw r.error;
+    const { error } = await c.from("library_files").delete().eq("id", row.id); if (error) throw error;
+  },
   // 건의함: 직원은 보내기만, 읽기·처리는 대표만(RLS)
   async sgSend(row) {
     const p = await this.getProfile();
@@ -398,8 +431,10 @@ const remote = {
   async sgSet(id, patch) { const { error } = await (await sb()).from("suggestions").update(patch).eq("id", id); if (error) throw error; },
   async sgDelete(id) { const { error } = await (await sb()).from("suggestions").delete().eq("id", id); if (error) throw error; },
   // 업무 기록(일지·일정·기록함): table = work_logs | work_events | work_notes. 보이는 범위는 서버(RLS)가 정한다.
-  async wkList(table) {
-    const { data, error } = await (await sb()).from(table).select("*").eq("store_id", await this.storeId()).order("created_at", { ascending: false }).limit(500);
+  async wkList(table, all = false) { // all=true: 사업장 구분 없이 전체(대표·부대표 보고판용)
+    let q = (await sb()).from(table).select("*");
+    if (!all) q = q.eq("store_id", await this.storeId());
+    const { data, error } = await q.order("created_at", { ascending: false }).limit(500);
     if (error) throw error;
     return data;
   },

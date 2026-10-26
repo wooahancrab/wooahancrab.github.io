@@ -5,6 +5,8 @@ import { fmtHM, dateOf, labelMD } from "../lib/kst.js";
 import { renderOwner } from "./owner.js";
 import { renderSuggestAdmin } from "./suggest.js";
 import { renderTasksAdmin } from "./tasks-admin.js";
+import { renderWork } from "./work.js";
+import { renderLibrary } from "./library.js";
 
 const SHORT = { gejang: "게장", ck: "CK", fnb: "F&B" };
 const KIND_ICON = { restaurant: "🦀", ck: "🏭", hq: "🏢" };
@@ -18,6 +20,8 @@ export async function renderCeo(root, profile) {
   let sgOpen = false, sgNew = 0; // 건의함 화면(대표만)
   let tkOpen = false; // 전 직원 업무지시 화면
   let tk = null; // 업무지시 현황 {today, open, done}
+  let libOpen = false; // 서식·자료함 화면
+  let wk = null, people = [], wkOpen = false; // 업무 기록(일지·일정·기록함) 전체, 직원 목록, 전체 기록 화면
   try { sel = localStorage.getItem("woo_ceo_sel") || "all"; } catch { /* 저장소를 못 쓰는 환경 */ }
 
   const badge = (t, c) => h("span", { class: "badge " + c }, t);
@@ -27,6 +31,8 @@ export async function renderCeo(root, profile) {
       [stores, ov] = await Promise.all([api.listStores(), api.overview()]);
       if (profile.role === "owner") sgNew = (await api.sgList().catch(() => [])).filter((r) => r.status === "새글").length;
       tk = await api.tkAll(true).catch(() => null); // 전 직원 업무지시 현황(없으면 숨김)
+      wk = await Promise.all(["work_logs", "work_events", "work_notes"].map((t) => api.wkList(t, true))).then(([logs, events, notes]) => ({ logs, events, notes })).catch(() => null);
+      people = (await api.tkPeople(true).catch(() => ({ people: [] }))).people;
       err = "";
       if (sel !== "all" && !stores.some((s) => s.id === sel)) sel = "all";
     } catch (e) { err = e.message; }
@@ -88,7 +94,35 @@ export async function renderCeo(root, profile) {
         reps.length > 0 && tile("📝", "일일보고", `${repOk} / ${reps.length} 제출`, repOk === reps.length ? "모두 제출" : "미제출 " + reps.filter((s) => !s.report.submitted).map((s) => SHORT[s.app_key] ?? s.name).join(", "), repOk < reps.length ? "err" : "ok-text", () => choose(reps.find((s) => !s.report.submitted)?.id ?? reps[0].id)),
         profile.role === "owner" && tile("💌", "건의함", sgNew ? `새 건의 ${sgNew}` : "새 건의 없음", "눌러서 보기", sgNew ? "err" : "", () => { sgOpen = true; draw(); })),
       recent.length > 0 && h("div", null, h("div", { class: "muted", style: "font-size:12px;margin:4px 0" }, "최근 업무 보고"),
-        recent.map((r) => h("div", { class: "srow", style: "align-items:flex-start" }, h("span", { class: r.cls }, r.icon + " " + r.text, h("div", { class: "muted", style: "font-size:12px" }, r.sub))))));
+        recent.map((r) => h("div", { class: "srow", style: "align-items:flex-start" }, h("span", { class: r.cls }, r.icon + " " + r.text, h("div", { class: "muted", style: "font-size:12px" }, r.sub))))),
+      wkBoard(sname));
+  }
+
+  // 업무 기록 보고판: 오늘 전 직원 일지, 다가오는 일정, 최근 기록함
+  function wkBoard(sname) {
+    if (!wk) return null;
+    const today = tk?.today ?? new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+    const logs = wk.logs.filter((l) => l.log_date === today);
+    const wrote = new Set(logs.map((l) => l.author_id));
+    const missing = people.filter((p) => !wrote.has(p.user_id));
+    const events = wk.events.filter((e) => !e.done);
+    const upcoming = events.filter((e) => e.ev_date >= today).sort((a, b) => (a.ev_date + a.ev_time).localeCompare(b.ev_date + b.ev_time)).slice(0, 6);
+    const overdue = events.filter((e) => e.ev_date < today).length;
+    const notes = wk.notes.slice(0, 5);
+    const head = (t, extra) => h("div", { style: "margin:12px 0 4px;display:flex;justify-content:space-between;align-items:baseline" }, h("b", null, t), extra);
+    return h("div", null,
+      head(`📝 오늘 업무 일지 (${logs.length}${people.length ? " / " + people.length : ""}명 작성)`, null),
+      logs.length ? logs.map((l) => h("details", { style: "margin:4px 0;padding:6px 10px;border:1px solid #ddd;border-radius:10px" },
+        h("summary", null, h("b", null, `${sname(l.store_id)} ${l.author_name}`), h("span", { class: "muted", style: "font-size:13px" }, "  " + (l.done || l.plan || "").split("\n")[0].slice(0, 40))),
+        l.done && h("div", { style: "white-space:pre-wrap;margin-top:4px" }, h("b", null, "한 일  "), l.done),
+        l.plan && h("div", { style: "white-space:pre-wrap;margin-top:4px" }, h("b", null, "내일  "), l.plan),
+        l.blockers && h("div", { class: "err", style: "white-space:pre-wrap;margin-top:4px" }, "막힌 점  " + l.blockers))) : h("p", { class: "muted", style: "margin:4px 0" }, "오늘 작성된 일지가 아직 없어요"),
+      missing.length > 0 && people.length > 0 && h("p", { class: "muted", style: "font-size:12px;margin:4px 0" }, "미작성: " + missing.slice(0, 12).map((p) => p.display_name).join(", ") + (missing.length > 12 ? ` 외 ${missing.length - 12}명` : "")),
+      head("📅 다가오는 일정", overdue ? h("span", { class: "err", style: "font-size:12px" }, `결과 없이 지난 일정 ${overdue}건`) : null),
+      upcoming.length ? upcoming.map((e) => h("div", { class: "srow" }, h("span", null, `${labelMD(e.ev_date)}${e.ev_time ? " " + e.ev_time : ""} · ${e.title}`), h("span", { class: "muted" }, `${sname(e.store_id)} ${e.author_name}`))) : h("p", { class: "muted", style: "margin:4px 0" }, "예정된 일정이 없어요"),
+      head("🗂 최근 기록함", null),
+      notes.length ? notes.map((n) => h("div", { class: "srow" }, h("span", null, n.title, n.tags ? h("span", { class: "muted", style: "font-size:12px" }, "  " + n.tags.split(",").map((x) => "#" + x.trim()).filter((x) => x.length > 1).join(" ")) : null), h("span", { class: "muted" }, `${sname(n.store_id)} ${n.author_name}`))) : h("p", { class: "muted", style: "margin:4px 0" }, "기록이 없어요"),
+      h("button", { class: "btn ghost slim", style: "margin-top:8px", onclick: () => { wkOpen = true; draw(); } }, "🗂 전체 업무 기록 열기"));
   }
 
   function allView() {
@@ -97,7 +131,9 @@ export async function renderCeo(root, profile) {
       h("section", { class: "card" }, h("h2", null, "오늘 한눈에"),
         totalBad > 0 ? h("p", { class: "err" }, `확인이 필요한 항목 ${totalBad}건`) : h("p", { class: "muted" }, "지금 밀린 항목이 없어요 👍"),
         board()),
-      h("button", { class: "btn primary", style: "margin:8px 0", onclick: () => { tkOpen = true; draw(); } }, "📌 업무지시 (전 직원)"),
+      h("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin:8px 0" },
+        h("button", { class: "btn primary", style: "flex:1", onclick: () => { tkOpen = true; draw(); } }, "📌 업무지시 (전 직원)"),
+        h("button", { class: "btn primary", style: "flex:1", onclick: () => { libOpen = true; draw(); } }, "📁 서식·자료함")),
       h("div", { class: "list" }, ov.stores.map(card)),
       // 대표(마스터)만: 모든 사업장 계정을 한 곳에서 관리 (부대표는 전체 소속)
       profile.role === "owner" && h("button", { class: "btn ghost", style: "margin-top:12px", onclick: () => { accountsOpen = true; draw(); } }, "👤 전체 계정 관리 (사업장·부대표 포함)"),
@@ -115,6 +151,18 @@ export async function renderCeo(root, profile) {
   function tkView() {
     const holder = h("div");
     renderTasksAdmin(holder, () => { tkOpen = false; draw(); }, { all: true });
+    return holder;
+  }
+
+  function libView() {
+    const holder = h("div");
+    renderLibrary(holder, { onBack: () => { libOpen = false; draw(); } });
+    return holder;
+  }
+
+  function wkView() {
+    const holder = h("div");
+    renderWork(holder, { all: true, stores, onBack: () => { wkOpen = false; load(); } });
     return holder;
   }
 
@@ -138,7 +186,7 @@ export async function renderCeo(root, profile) {
     root.replaceChildren(h("div", { class: "page", style: "padding-bottom:0" }, chips()),
       err ? h("div", { class: "page" }, h("p", { class: "err" }, "불러오기 실패: " + err), h("button", { class: "btn ghost", onclick: load }, "다시 시도"))
         : !ov ? h("div", { class: "page" }, h("p", { class: "muted" }, "불러오는 중…"))
-        : sel === "all" ? (tkOpen ? tkView() : sgOpen ? sgView() : accountsOpen ? accountsView() : h("div", { class: "page" }, allView())) : storeView());
+        : sel === "all" ? (libOpen ? libView() : wkOpen ? wkView() : tkOpen ? tkView() : sgOpen ? sgView() : accountsOpen ? accountsView() : h("div", { class: "page" }, allView())) : storeView());
     scrollTo(0, y);
   }
 
