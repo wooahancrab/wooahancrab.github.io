@@ -73,6 +73,9 @@ const demo = {
   async stRecv() { return LS.get("woo_demo_recv", []); },
   async stDeps() { return LS.get("woo_demo_deps", []); },
   async stWds() { return []; },
+  async stRules() { return []; },
+  async stSetRule() {},
+  async stDelRule() {},
   async stAddWds() { return 0; },
   async stAddRecv(rows) {
     const all = LS.get("woo_demo_recv", []); const have = new Set(all.map((r) => r.ref)); let n = 0;
@@ -330,6 +333,20 @@ const remote = {
     const { data, error } = await (await sb()).from("bank_withdrawals").select("id,wd_date,amount,memo").eq("store_id", await this.storeId()).order("wd_date");
     if (error) throw error;
     return data.map((d) => ({ id: d.id, date: d.wd_date, amount: d.amount, memo: d.memo }));
+  },
+  // 거래처 분류 규칙 (지출 분석)
+  async stRules() {
+    const { data, error } = await (await sb()).from("spend_rules").select("keyword,category").eq("store_id", await this.storeId());
+    if (error) throw error;
+    return data;
+  },
+  async stSetRule(keyword, category) {
+    const { error } = await (await sb()).from("spend_rules").upsert({ store_id: await this.storeId(), keyword: keyword.trim(), category: category.trim() }, { onConflict: "store_id,keyword" });
+    if (error) throw error;
+  },
+  async stDelRule(keyword) {
+    const { error } = await (await sb()).from("spend_rules").delete().eq("store_id", await this.storeId()).eq("keyword", keyword);
+    if (error) throw error;
   },
   async stAddWds(rows) {
     const c = await sb(), store_id = await this.storeId(); let n = 0;

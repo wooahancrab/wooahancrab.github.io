@@ -112,8 +112,22 @@ const SPEND_RULES = [
 ];
 const PERSON_RE = /^[가-힣]{2,4}$|^[ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺA-Z\s]{4,}$/;
 
-/** 출금 한 건 → 지출 분류 이름 */
-export function classifySpend(memo) {
+const nrm = (s) => String(s ?? "").normalize("NFKC").replace(/[\s()（）[\]·.,_-]/g, "").toLowerCase();
+
+/** 사용자가 정한 거래처 규칙(rules: [{keyword, category}])을 먼저 적용한다. 긴 키워드가 우선. */
+export function matchRule(memo, rules) {
+  const m = nrm(memo); let best = null;
+  for (const r of rules ?? []) {
+    const k = nrm(r.keyword);
+    if (k && m.includes(k) && (!best || k.length > nrm(best.keyword).length)) best = r;
+  }
+  return best;
+}
+
+/** 출금 한 건 → 지출 분류 이름 (사용자 규칙 → 자동 추정 순서) */
+export function classifySpend(memo, rules = []) {
+  const r = matchRule(memo, rules);
+  if (r) return r.category;
   const m = String(memo ?? "").trim();
   for (const [name, re] of SPEND_RULES) if (re.test(m)) return name;
   if (OWNER_NAMES.some((n) => m.includes(n))) return "대표·가족 이체";
@@ -122,11 +136,15 @@ export function classifySpend(memo) {
   return "기타";
 }
 
-export function spendReport(wds, month) {
+// 분류 선택지(사용자가 직접 새 이름도 쓸 수 있다)
+export const SPEND_CATEGORIES = ["식자재·매입", "쌀·곡물 매입", "수산·꽃게 매입", "급여·인건비", "임차료", "공과금", "세금·4대보험", "카드·수수료", "대표·가족 이체", "자동이체(번호)", "기타"];
+const UNSURE = ["개인 이체(급여 등)", "기타"]; // 사람이 확인해야 하는 분류
+
+export function spendReport(wds, month, rules = []) {
   const inMonth = wds.filter((w) => w.date.startsWith(month));
   const cats = new Map(), byDate = new Map();
   for (const w of inMonth) {
-    const c = classifySpend(w.memo);
+    const c = classifySpend(w.memo, rules);
     const e = cats.get(c) ?? { name: c, total: 0, n: 0, items: new Map() };
     e.total += w.amount; e.n++;
     const who = String(w.memo ?? "").trim() || "(적요 없음)";
@@ -134,9 +152,12 @@ export function spendReport(wds, month) {
     cats.set(c, e);
     byDate.set(w.date, (byDate.get(w.date) ?? 0) + w.amount);
   }
+  const list = [...cats.values()].sort((a, b) => b.total - a.total).map((c) => ({ ...c, items: [...c.items].map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total) }));
+  // 분류를 사람이 확인해야 하는 거래처(금액 큰 순): 아직 규칙이 없는 "개인 이체"·"기타"
+  const unsure = list.filter((c) => UNSURE.includes(c.name)).flatMap((c) => c.items.map((i) => ({ ...i, from: c.name }))).sort((a, b) => b.total - a.total);
   return {
     total: inMonth.reduce((s, w) => s + w.amount, 0),
-    cats: [...cats.values()].sort((a, b) => b.total - a.total).map((c) => ({ ...c, items: [...c.items].map(([name, total]) => ({ name, total })).sort((a, b) => b.total - a.total) })),
+    cats: list, unsure,
     daily: [...byDate].map(([date, amount]) => ({ date, amount })).sort((a, b) => b.date.localeCompare(a.date)),
   };
 }
