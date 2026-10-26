@@ -1,11 +1,11 @@
-// 통장 거래내역 읽기·분류 — 순수 로직(화면·DB 없음).
+﻿// 통장 거래내역 읽기·분류 — 순수 로직(화면·DB 없음).
 // 신협 "입출금거래내역" 엑셀 형식에 맞춤: 거래일자·거래시간·출금금액·입금금액·거래후잔액·거래종류·거래기록사항.
 // 한 파일에 시트가 여러 개일 수 있고 같은 거래가 겹쳐 들어 있어서, 거래후잔액까지 넣은 키로 중복을 없앤다.
 import { toDate } from "./settle.js";
 
 const num = (v) => {
   if (typeof v === "number") return v;
-  const t = String(v ?? "").replace(/[,원\s]/g, "");
+  const t = String(v ?? "").replace(/[,원₩\s]/g, "");
   return t && /^-?\d+(\.\d+)?$/.test(t) ? Number(t) : 0;
 };
 const flat = (c) => String(c ?? "").replace(/\s/g, "");
@@ -13,8 +13,8 @@ const flat = (c) => String(c ?? "").replace(/\s/g, "");
 const NAMES = {
   date: ["거래일자", "거래일", "거래일시", "일자", "날짜", "승인일시"],
   time: ["거래시간", "시간"],
-  out: ["출금금액", "출금액", "출금", "찾으신금액", "출금(원)"],
-  inn: ["입금금액", "입금액", "입금", "맡기신금액", "입금(원)"],
+  out: ["출금금액", "출금액", "출금", "찾으신금액", "출금(원)", "출금금액(원)"],
+  inn: ["입금금액", "입금액", "입금", "맡기신금액", "입금(원)", "입금금액(원)"],
   bal: ["거래후잔액", "잔액", "거래후잔액(원)"],
   memo: ["거래기록사항", "적요", "거래내용", "내용", "기재내용", "보낸분받는분", "입금자", "의뢰인"],
   kind: ["거래종류", "거래구분", "구분"],
@@ -38,7 +38,10 @@ function findCols(head) {
 export function parseBankStatement(sheets) {
   const deposits = [], withdrawals = [], seen = new Set(), baseCount = new Map();
   let dup = 0, found = false;
-  for (const rows of sheets) {
+  const hasBal = (rows) => rows.some((r) => (r ?? []).map(flat).some((c) => NAMES.bal.includes(c)));
+  const strong = new Set(); // 잔액이 있는 시트의 거래 — 출금만 따로 모은 시트(잔액 없음)가 겹쳐 들어오면 이걸로 걸러낸다
+  for (const rows of [...sheets].sort((a, b) => hasBal(b) - hasBal(a))) {
+    const weak = !hasBal(rows);
     const hi = rows.findIndex((r) => {
       const h = (r ?? []).map(flat);
       return NAMES.date.some((n) => h.includes(n)) && (NAMES.inn.some((n) => h.includes(n)) || NAMES.out.some((n) => h.includes(n)));
@@ -54,6 +57,9 @@ export function parseBankStatement(sheets) {
       const time = col.time != null ? String(r[col.time] ?? "") : "";
       const bal = col.bal != null ? num(r[col.bal]) : "";
       const key = [date, time, out, inn, bal].join("|");
+      const k2 = [date, time, out, inn].join("|");
+      if (weak && time && strong.has(k2)) { dup++; continue; }
+      if (!weak && time) strong.add(k2);
       if (time || bal !== "") { if (seen.has(key)) { dup++; continue; } seen.add(key); }
       const memo = [col.memo != null ? r[col.memo] : "", col.kind != null ? "" : "", col.note != null ? r[col.note] : ""].map((x) => String(x ?? "").trim()).filter(Boolean).join(" ");
       // 시간·잔액이 없는 은행 파일은 같은 날 같은 금액·적요가 여러 건일 수 있어 순번을 붙인다
@@ -110,6 +116,7 @@ const SPEND_RULES = [
   ["식자재·매입", /푸드|수산|유통|마켓|농산|식자재|물산|상회|축산|청과|F&B|에프앤비|정육|물류|산업|식품|종합/],
   ["카드·수수료", /카드|수수료|결제|PG|페이/],
   ["대출·이자·금융", /농협|신협|새마을|저축은행|은행|캐피탈|대출|이자|보험|리스|할부/],
+  ["내부거래·보증금", /대여|차입|상환|보증금/],
 ];
 const PERSON_RE = /^[가-힣]{2,4}$|^[ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺA-Z\s]{4,}$/;
 
@@ -138,7 +145,7 @@ export function classifySpend(memo, rules = []) {
 }
 
 // 분류 선택지(사용자가 직접 새 이름도 쓸 수 있다)
-export const SPEND_CATEGORIES = ["식자재·매입", "쌀·곡물 매입", "수산·꽃게 매입", "급여·인건비", "임차료", "공과금", "세금·4대보험", "카드·수수료", "대출·이자·금융", "대표·가족 이체", "자동이체(번호)", "기타"];
+export const SPEND_CATEGORIES = ["식자재·매입", "쌀·곡물 매입", "수산·꽃게 매입", "급여·인건비", "임차료", "공과금", "세금·4대보험", "카드·수수료", "대출·이자·금융", "내부거래·보증금", "대표·가족 이체", "자동이체(번호)", "기타"];
 const UNSURE = ["개인 이체(급여 등)", "기타"]; // 사람이 확인해야 하는 분류
 
 export function spendReport(wds, month, rules = []) {

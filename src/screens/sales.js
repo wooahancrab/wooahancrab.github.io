@@ -5,6 +5,11 @@ import { todayKST, addDays } from "../lib/kst.js";
 import { won } from "../lib/settle.js";
 import { salesReport } from "../lib/sales.js";
 import { depositBreakdown, spendReport, SPEND_CATEGORIES } from "../lib/bank.js";
+import { reconcile as matchInvoices, nz } from "../lib/invoice-match.js";
+
+// 계산서가 있어야 정상인 지출(매입). 급여·세금·임차료·대출 등은 계산서 없이 나가는 게 맞다.
+const NEEDS_INV = ["식자재·매입", "쌀·곡물 매입", "수산·꽃게 매입", "개인 이체(급여 등)", "기타"];
+const OWNERS = ["이홍근", "김형곤", "이한만", "이명근", "이경희"];
 
 const man = (n) => Math.round(n / 10000).toLocaleString("ko-KR") + "만";
 
@@ -12,13 +17,14 @@ export async function renderSales(root, onBack, opts = {}) {
   const today = todayKST();
   const thisMonth = today.slice(0, 7);
   const prevMonth = addDays(thisMonth + "-01", -1).slice(0, 7);
-  let recv = [], deps = [], wds = [], rules = [], err = "", loading = true, view = thisMonth;
+  let recv = [], deps = [], wds = [], rules = [], invs = [], err = "", loading = true, view = thisMonth;
 
   async function load() {
     try {
       [recv, deps] = await Promise.all([api.stRecv(), api.stDeps()]);
       wds = await api.stWds().catch(() => []); // bank.sql 실행 전에는 출금 내역 없이 보여준다
       rules = await api.stRules().catch(() => []); // spend-rules.sql 실행 전에는 자동 분류만 쓴다
+      invs = await api.stInvs().catch(() => []); // invoices.sql 실행 전에는 계산서 대조 없이 보여준다
       err = "";
     } catch (e) { err = e.message; }
     loading = false; draw();
@@ -46,12 +52,24 @@ export async function renderSales(root, onBack, opts = {}) {
     h("div", { class: "muted", style: "font-size:12px" }, t), h("b", { class: cls, style: "font-size:17px" }, v), sub && h("div", { class: "muted", style: "font-size:12px" }, sub));
 
   function draw() {
+    try { drawInner(); } catch (e) {
+      root.replaceChildren(h("div", { class: "page" }, h("button", { class: "linkbtn back", onclick: onBack }, "← 목록"),
+        h("p", { class: "err" }, "화면을 그리다 오류가 났어요: " + e.message), h("pre", { style: "font-size:11px;white-space:pre-wrap" }, String(e.stack ?? "").slice(0, 600))));
+    }
+  }
+
+  function drawInner() {
     if (loading) return root.replaceChildren(h("div", { class: "page" }, h("p", { class: "muted" }, "불러오는 중…")));
     // 지난달을 보면 그 달의 마지막 날을 기준일로 해서 "월말 환산" 없이 확정 숫자를 보여준다
     const asOf = view === thisMonth ? today : addDays(thisMonth + "-01", -1);
     const r = salesReport(deps, recv, asOf);
     const inB = depositBreakdown(deps, view);
-    const sp = spendReport(wds, view, rules);
+    // 계산서 대조: 올린 계산서 전체 기간 기준(결제는 며칠~몇 주 늦게 나가서 달로 자르면 어긋난다)
+    const firstInv = invs.length ? invs.reduce((m, v) => (v.date < m ? v.date : m), invs[0].date) : "";
+    const inv = invs.length ? matchInvoices(invs, wds.filter((w) => w.date >= firstInv), rules) : null;
+    // 계산서에 나온 거래처는 그 품목·업종으로 자동 분류하고, 사람이 정한 규칙이 있으면 그게 우선한다
+    const derived = inv ? inv.vendors.flatMap((v) => [v.name, v.rep].filter((k) => nz(k).length >= 3 && !OWNERS.includes(k)).map((k) => ({ keyword: k, category: v.category }))) : [];
+    const sp = spendReport(wds, view, [...rules, ...derived]);
     const cardTotal = inB.find((g) => g.group === "카드")?.total ?? 0;
     const tabs = h("div", { class: "tabs" }, [[thisMonth, `${Number(thisMonth.slice(5))}월 (이번 달)`], [prevMonth, `${Number(prevMonth.slice(5))}월 (지난달)`]].map(([k, l]) =>
       h("button", { class: "tab" + (view === k ? " on" : ""), onclick: () => { view = k; draw(); } }, l)));
@@ -93,6 +111,35 @@ export async function renderSales(root, onBack, opts = {}) {
           rules.map((r) => h("div", { class: "srow" }, h("span", null, r.keyword, " → ", h("b", null, r.category)), h("button", { class: "linkbtn", onclick: () => unassign(r.keyword) }, "지우기")))),
         sp.daily.length > 0 && h("details", null, h("summary", null, `일별 지출 (${sp.daily.length}일)`),
           h("table", { class: "stats" }, h("tbody", null, sp.daily.map((d) => h("tr", null, h("td", null, d.date.slice(5)), h("td", { style: "text-align:right" }, won(d.amount)))))))),
+
+      h("section", { class: "card" }, h("h2", null, "🧾 계산서 대조 (매입)"),
+        !inv ? h("p", { class: "muted" }, "홈택스 매입 (세금)계산서 엑셀을 올리면 통장 출금과 맞춰서 '안 준 돈'과 '계산서 없이 나간 돈'을 찾아 줘요. 수금 대조 화면의 '🧾 매입 계산서'에서 올려요.")
+          : [
+            h("p", { class: "muted", style: "font-size:12px" }, `${firstInv} ~ 올린 계산서 ${invs.length}장 · 거래처 ${inv.vendors.length}곳`),
+            h("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
+              stat("계산서 합계", won(inv.totals.invoiced), `${invs.length}장`),
+              stat("통장에서 준 돈", won(inv.totals.paid), "계산서 거래처로 확인된 출금"),
+              stat("덜 준 돈", won(inv.totals.owed), `${inv.vendors.filter((v) => v.owed > 1000).length}곳`, inv.totals.owed ? "err" : "ok-text"),
+              stat("계산서 없는 출금", won(inv.unmatched.filter((u) => NEEDS_INV.includes(u.category)).reduce((s, u) => s + u.total, 0)), "매입으로 보이는데 계산서 없음", "err")),
+            h("h3", { style: "margin:12px 0 4px" }, "계산서는 왔는데 덜 준 곳"),
+            inv.vendors.filter((v) => v.owed > 1000).length
+              ? inv.vendors.filter((v) => v.owed > 1000).slice(0, 30).map((v) => h("div", { class: "srow" },
+                h("span", null, v.name, " ", h("span", { class: "muted", style: "font-size:12px" }, `계산서 ${won(v.invoiced)} · 준 돈 ${won(v.paid)}`)),
+                h("b", { class: "err" }, won(v.owed))))
+              : h("p", { class: "muted" }, "덜 준 곳이 없어요 🎉"),
+            h("p", { class: "muted", style: "font-size:12px" }, "다른 통장(대표 개인·다른 사업장·카드)으로 낸 돈은 여기서 안 잡혀요. 그런 곳은 '덜 준 돈'으로 보일 수 있어요."),
+            h("h3", { style: "margin:12px 0 4px" }, "계산서 없이 나간 돈 (매입으로 보이는 것)"),
+            inv.unmatched.filter((u) => NEEDS_INV.includes(u.category)).length
+              ? inv.unmatched.filter((u) => NEEDS_INV.includes(u.category)).slice(0, 30).map((u) => h("div", { class: "srow" },
+                h("span", null, u.name, " ", h("span", { class: "muted", style: "font-size:12px" }, `${u.n}건 · ${u.category}`), " ", h("button", { class: "linkbtn", style: "font-size:12px", onclick: () => assign(u.name, u.category) }, "분류")),
+                h("b", null, won(u.total))))
+              : h("p", { class: "muted" }, "없어요 🎉"),
+            h("p", { class: "muted", style: "font-size:12px" }, "급여·임차료·세금·대출처럼 계산서가 없어도 되는 건 '분류'로 항목을 정해 주면 여기서 빠져요."),
+            h("details", { style: "margin-top:8px" }, h("summary", null, "거래처별 전체 보기"),
+              inv.vendors.map((v) => h("div", { class: "srow" },
+                h("span", null, v.name, " ", h("span", { class: "muted", style: "font-size:12px" }, `${v.category} · 계산서 ${won(v.invoiced)} / 출금 ${won(v.paid)}`)),
+                h("span", { class: v.status === "완납" ? "ok-text" : v.status === "초과" ? "muted" : "err" }, v.status)))),
+          ]),
 
       view === thisMonth && h("section", { class: "card" }, h("h2", null, "앞으로 정산 예정 (14일)"),
         r.upcoming.length ? r.upcoming.map((u) => h("div", { class: "srow" },
