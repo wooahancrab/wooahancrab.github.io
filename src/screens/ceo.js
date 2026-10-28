@@ -21,8 +21,13 @@ export async function renderCeo(root, profile) {
   let tkOpen = false; // 전 직원 업무지시 화면
   let tk = null; // 업무지시 현황 {today, open, done}
   let libOpen = false; // 서식·자료함 화면
+  // 프로젝트 화면(대표·부대표). ?p=프로젝트&post=글 주소로 들어오면 바로 그 프로젝트를 연다
+  const dl = new URLSearchParams(location.search);
+  let pjOpts = { openId: dl.get("p") || null, postId: dl.get("post") || null };
+  let pjOpen = !!pjOpts.openId;
   let wk = null, people = [], wkOpen = false; // 업무 기록(일지·일정·기록함) 전체, 직원 목록, 전체 기록 화면
   try { sel = localStorage.getItem("woo_ceo_sel") || "all"; } catch { /* 저장소를 못 쓰는 환경 */ }
+  if (pjOpen) sel = "all";
 
   const badge = (t, c) => h("span", { class: "badge " + c }, t);
 
@@ -133,7 +138,8 @@ export async function renderCeo(root, profile) {
         board()),
       h("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin:8px 0" },
         h("button", { class: "btn primary", style: "flex:1", onclick: () => { tkOpen = true; draw(); } }, "📌 업무지시 (전 직원)"),
-        h("button", { class: "btn primary", style: "flex:1", onclick: () => { libOpen = true; draw(); } }, "📁 서식·자료함")),
+        h("button", { class: "btn primary", style: "flex:1", onclick: () => { libOpen = true; draw(); } }, "📁 서식·자료함"),
+        h("button", { class: "btn primary", style: "flex:1", onclick: () => { pjOpen = true; draw(); } }, "📂 프로젝트")),
       h("div", { class: "list" }, ov.stores.map(card)),
       // 대표(마스터)만: 모든 사업장 계정을 한 곳에서 관리 (부대표는 전체 소속)
       profile.role === "owner" && h("button", { class: "btn ghost", style: "margin-top:12px", onclick: () => { accountsOpen = true; draw(); } }, "👤 전체 계정 관리 (사업장·부대표 포함)"),
@@ -151,6 +157,16 @@ export async function renderCeo(root, profile) {
   function tkView() {
     const holder = h("div");
     renderTasksAdmin(holder, () => { tkOpen = false; draw(); }, { all: true });
+    return holder;
+  }
+
+  function pjView() {
+    const holder = h("div");
+    import("./projects.js").then((m) => {
+      const o = pjOpts; pjOpts = {};
+      if (o.openId) { try { history.replaceState(history.state, "", location.pathname); } catch { /* 무시 */ } }
+      return m.renderProjects(holder, { ...o, onBack: () => { pjOpen = false; draw(); } });
+    }).catch((e) => holder.replaceChildren(h("p", { class: "err", style: "padding:16px" }, "프로젝트 화면을 불러오지 못했어요: " + e.message)));
     return holder;
   }
 
@@ -186,7 +202,7 @@ export async function renderCeo(root, profile) {
     root.replaceChildren(h("div", { class: "page", style: "padding-bottom:0" }, chips()),
       err ? h("div", { class: "page" }, h("p", { class: "err" }, "불러오기 실패: " + err), h("button", { class: "btn ghost", onclick: load }, "다시 시도"))
         : !ov ? h("div", { class: "page" }, h("p", { class: "muted" }, "불러오는 중…"))
-        : sel === "all" ? (libOpen ? libView() : wkOpen ? wkView() : tkOpen ? tkView() : sgOpen ? sgView() : accountsOpen ? accountsView() : h("div", { class: "page" }, allView())) : storeView());
+        : sel === "all" ? (pjOpen ? pjView() : libOpen ? libView() : wkOpen ? wkView() : tkOpen ? tkView() : sgOpen ? sgView() : accountsOpen ? accountsView() : h("div", { class: "page" }, allView())) : storeView());
     scrollTo(0, y);
   }
 

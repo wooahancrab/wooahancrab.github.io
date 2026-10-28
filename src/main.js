@@ -121,9 +121,10 @@ function tabbedHome(view, profile, tabs) {
   let tab = tabs[0][0];
   const body = h("div", { id: "mbody" });
   const bar = h("div", { class: "page", style: "padding-bottom:0" });
+  const drawBar = () => bar.replaceChildren(h("div", { class: "tabs" }, tabs.map(([k, l]) =>
+    h("button", { class: "tab" + (tab === k ? " on" : ""), onclick: () => { tab = k; show(); } }, l))));
   const show = async () => {
-    bar.replaceChildren(h("div", { class: "tabs" }, tabs.map(([k, l]) =>
-      h("button", { class: "tab" + (tab === k ? " on" : ""), onclick: () => { tab = k; show(); } }, l))));
+    drawBar();
     // 탭마다 새 컨테이너: 탭을 떠난 화면의 타이머·늦게 끝난 그리기가 지금 화면을 덮어쓰지 못하게 한다
     const pane = h("div");
     body.replaceChildren(pane);
@@ -132,5 +133,20 @@ function tabbedHome(view, profile, tabs) {
   };
   view.append(bar, body);
   show();
+  // 프로젝트 탭: 내가 참여한 활성 프로젝트가 있을 때만 나타난다(없으면 아무 일도 안 일어난다). ?p=프로젝트&post=글 주소로 바로 열기도 한다.
+  const dl = new URLSearchParams(location.search);
+  let pjOpts = { openId: dl.get("p") || null, postId: dl.get("post") || null };
+  import("./screens/projects.js").then(async (m) => {
+    const s = await m.pjSummary();
+    if (!(s.joined > 0) || tabs.some((t) => t[0] === "pj")) return;
+    const at = tabs.findIndex((t) => t[0] === "lib");
+    const label = s.newPosts > 0 ? `프로젝트 ${s.newPosts > 99 ? "99+" : s.newPosts}` : "프로젝트";
+    tabs.splice(at < 0 ? tabs.length : at, 0, ["pj", label, (pane) => {
+      const o = pjOpts; pjOpts = {};
+      if (o.openId) { try { history.replaceState(history.state, "", location.pathname); } catch { /* 무시 */ } }
+      return m.renderProjects(pane, o);
+    }]);
+    if (pjOpts.openId) { tab = "pj"; show(); } else drawBar(); // 주소로 들어왔을 때만 화면을 바꾼다
+  }).catch(() => { /* 프로젝트 화면 문제는 다른 화면에 영향을 주지 않는다 */ });
 }
 boot();

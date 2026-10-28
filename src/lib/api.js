@@ -45,6 +45,7 @@ const demo = {
   async sgList() { return []; },
   async sgSet() {},
   async sgDelete() {},
+  async pj() { throw new Error("데모 모드에서는 프로젝트를 쓸 수 없어요"); },
   async libList() { return []; },
   async libUpload() { throw new Error("데모 모드에서는 파일을 올릴 수 없어요"); },
   async libUrl() { throw new Error("데모 모드에서는 파일을 열 수 없어요"); },
@@ -131,6 +132,7 @@ const demo = {
 
 /* ---------------- Supabase ---------------- */
 let _sb;
+let pjMod; // 프로젝트 기능은 따로 불러온다(새 파일에 문제가 있어도 로그인·다른 화면은 정상)
 async function sb() {
   if (!_sb) {
     const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm");
@@ -388,6 +390,10 @@ const remote = {
   },
   async stPatch(id, f) { const { error } = await (await sb()).from("receivables").update(f).eq("id", id); if (error) throw error; },
   async stDelete(id) { const { error } = await (await sb()).from("receivables").delete().eq("id", id); if (error) throw error; },
+  // 프로젝트 아카이브: 화면은 const pj = await api.pj() 로 쓴다 (pj-api.js, projects.sql)
+  pj() {
+    return (pjMod ??= import("./pj-api.js").then((m) => m.makePj({ sb, me: () => this.getProfile() })).catch((e) => { pjMod = null; throw e; }));
+  },
   // 서식·자료함: 파일은 Storage(library), 목록·권한은 library_files(RLS). 보이는 것만 서버가 내려준다.
   async libList() {
     const { data, error } = await (await sb()).from("library_files").select("*, stores(display_name,name)").order("created_at", { ascending: false }).limit(1000);
