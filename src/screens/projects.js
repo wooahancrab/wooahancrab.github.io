@@ -539,7 +539,7 @@ export async function renderProjects(root, opts = {}) {
         h("button", { type: "button", class: "pj-mini", onclick: () => loadList({ manual: true }) }, "↻ 새로고침")),
       search,
       chipsBox,
-      isTop ? h("button", { type: "button", class: "btn primary", onclick: () => newProject() }, "+ 새 프로젝트") : null,
+      h("button", { type: "button", class: "btn primary", onclick: () => newProject() }, "+ 새 프로젝트"),
       gridBox));
     drawChips();
     drawGrid();
@@ -555,7 +555,7 @@ export async function renderProjects(root, opts = {}) {
   function emptyText(key) {
     if (key) return "찾는 프로젝트가 없어요";
     if (chip === "arch") return "보관한 프로젝트가 없어요";
-    if (chip === "joined" && !isTop) return "참여 중인 프로젝트가 없어요. 대표님께 참여를 요청해 주세요";
+    if (chip === "joined" && !isTop) return "참여 중인 프로젝트가 없어요. [+ 새 프로젝트]로 만들거나, 만든 사람에게 참여를 요청해 주세요";
     if (chip === "joined" && rows.some((r) => r.status === "active")) return "참여 중인 프로젝트가 없어요. [전체]에서 프로젝트를 열어 [참여하기]를 눌러 보세요";
     return "아직 프로젝트가 없어요. [+ 새 프로젝트]로 만들어 보세요";
   }

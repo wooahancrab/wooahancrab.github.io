@@ -133,12 +133,12 @@ function tabbedHome(view, profile, tabs) {
   };
   view.append(bar, body);
   show();
-  // 프로젝트 탭: 내가 참여한 활성 프로젝트가 있을 때만 나타난다(없으면 아무 일도 안 일어난다). ?p=프로젝트&post=글 주소로 바로 열기도 한다.
+  // 프로젝트 탭: 모든 직원에게 보인다(새 프로젝트도 직원이 직접 만든다). ?p=프로젝트&post=글 주소로 바로 열기도 한다.
   const dl = new URLSearchParams(location.search);
   let pjOpts = { openId: dl.get("p") || null, postId: dl.get("post") || null };
   import("./screens/projects.js").then(async (m) => {
     const s = await m.pjSummary();
-    if (!(s.joined > 0) || tabs.some((t) => t[0] === "pj")) return;
+    if (tabs.some((t) => t[0] === "pj")) return; // 모든 직원이 프로젝트를 만들고 쓸 수 있어서 탭은 항상 보인다
     const at = tabs.findIndex((t) => t[0] === "lib");
     const label = s.newPosts > 0 ? `프로젝트 ${s.newPosts > 99 ? "99+" : s.newPosts}` : "프로젝트";
     tabs.splice(at < 0 ? tabs.length : at, 0, ["pj", label, (pane) => {
