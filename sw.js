@@ -1,4 +1,4 @@
-﻿const CACHE = "wooahan-v38";
+const CACHE = "wooahan-v39";
 const SHELL = [
   "./", "index.html", "manifest.webmanifest", "src/styles.css", "src/main.js", "src/config.js",
   "src/lib/api.js", "src/lib/ui.js", "src/lib/kst.js", "src/lib/report.js",

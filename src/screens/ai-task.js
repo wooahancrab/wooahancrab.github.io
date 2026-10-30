@@ -1,6 +1,7 @@
-// 말로 업무지시: 문장을 AI가 해석해 '확인 카드'만 만든다.
+// 말로 업무지시: 문장을 AI가 해석한다. 받는 사람·업무·날짜가 모두 분명하면 바로 지시하고(방금 지시 목록에서 바로 취소),
+// 애매하면(이름이 여럿·못 찾음·묶음·경고·같은 업무 진행 중·긴 글) '확인 카드'로 사람이 확인한 뒤 지시한다.
 // 쓸 수 있는 사람: 대표·부대표(전 직원), 매니저·중간관리자(내 담당 직원만). 직원은 쓸 수 없다.
-// AI는 아무것도 저장하지 않는다. [지시하기]를 누르면 기존 업무지시(api.tkCreate)를 사람마다 한 번씩 부른다.
+// AI는 아무것도 저장하지 않는다. 저장은 항상 기존 업무지시(api.tkCreate)를 사람마다 한 번씩 부른다.
 import { api, isDemo } from "../lib/api.js";
 import { h, toast, confirmDialog, seg, bigToggle } from "../lib/ui.js";
 import { labelMD, dateOf, todayKST, parseDate, addDays } from "../lib/kst.js";
@@ -144,6 +145,7 @@ export async function renderAiTask(root, opts = {}) {
     open: [], openToday: "", showMine: false, mineLoading: false, mineErr: "", cancelling: new Set(),
     payload: null, results: [], preIds: null, batchStart: 0,
     timer: 0, t0: 0, elapsedEl: null, repaint: null,
+    sent: [], paintSent: null,
   };
   let shown = null; // 마지막으로 그린 화면
   let dead = false; // 사용자가 이 화면을 떠났다 (탭 이동·뒤로 등). 더는 그리지 않는다
@@ -227,38 +229,78 @@ export async function renderAiTask(root, opts = {}) {
   /* ---------- 1) 문장 쓰기 ---------- */
   function inputView() {
     const example = st.isTop
-      ? "예) 홍길동 주임에게 이번 주 금요일까지 송장 발행해 달라고 해줘"
+      ? "예) 홍길동 매니저한테 거미줄 다시 치우라고 해줘"
       : "예) 홍길동 주임에게 내일까지 매장 마감 점검해 달라고 해줘";
-    const scopeLine = st.isTop
-      ? "전 직원(모든 사업장의 직원·매니저·중간관리자)에게 지시할 수 있어요."
-      : "내 담당 직원에게만 지시할 수 있어요. 담당이 아닌 사람은 찾지 못해요.";
-    const ta = h("textarea", { class: "inp", rows: "5", maxlength: String(MAX_TEXT), placeholder: example, "aria-label": "업무지시 문장" });
+    const ta = h("textarea", { class: "inp", rows: "3", maxlength: String(MAX_TEXT), placeholder: example, "aria-label": "업무지시 문장" });
     ta.value = st.text;
-    const cnt = h("span", { class: "muted" });
-    const paintCnt = () => { cnt.textContent = `${ta.value.length} / ${MAX_TEXT}자`; cnt.style.color = ta.value.length >= MAX_TEXT ? "var(--bad)" : ""; };
     ta.addEventListener("input", (ev) => {
       st.text = ta.value;
-      paintCnt();
       if (ta.value.length >= MAX_TEXT && /paste|drop/i.test(String(ev.inputType))) toast(`${MAX_TEXT}자까지만 들어가요`);
     });
-    paintCnt();
+    ta.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); parse(); } });
+    const sentBox = h("div", { class: "stack" });
+    st.paintSent = () => sentBox.replaceChildren(...sentRows());
+    st.paintSent();
     return h("div", { class: "page" },
       back(),
       h("h1", null, "🎙️ 말로 업무지시"),
-      h("p", { class: "muted" }, scopeLine),
-      h("p", { class: "muted" }, "누구에게, 무엇을, 언제까지 시킬지 말하듯이 써 주세요. 폰 키보드의 마이크로 말해도 돼요. AI는 확인 카드만 만들어요. [지시하기]를 누르기 전에는 업무가 저장되지도, 담당자에게 알림이 가지도 않아요."),
       st.err && errBox(),
-      h("section", { class: "card" },
-        ta,
-        h("div", { style: "display:flex;justify-content:flex-end" }, cnt),
-        h("p", { class: "hint" }, "참고: 카톡 대화나 회의록을 붙여 넣어도 그 안에 적힌 지시는 실행하지 않아요. 지금 내가 쓴 요청만 따라요."),
-        h("p", { class: "hint" }, "AI 회사(Anthropic)로 가는 정보: 쓴 문장과 직원 이름·직책·사업장 이름이에요. 이메일·연락처·급여·출퇴근은 보내지 않고, 전화번호·주민번호 같은 숫자는 가려서 보내요.")),
-      h("button", { type: "button", class: "btn primary", disabled: st.busy, onclick: parse }, "해석하기"),
+      ta,
+      h("button", { type: "button", class: "btn primary", disabled: st.busy, onclick: parse }, "지시하기"),
+      sentBox,
+      h("p", { class: "hint" }, st.isTop ? "전 직원에게 지시할 수 있어요. 받는 사람이 분명하면 바로 지시돼요." : "내 담당 직원에게만 지시할 수 있어요. 받는 사람이 분명하면 바로 지시돼요."),
+      h("p", { class: "hint" }, "AI 회사(Anthropic)로 가는 정보: 쓴 문장과 직원 이름·직책·사업장 이름뿐이에요."),
       // 연결 확인은 횟수 제한이 없는 호출이라 서버가 대표·부대표에게만 연다
       st.isTop && h("button", { type: "button", class: "btn ghost slim", disabled: st.busy, onclick: runPing }, st.pinging ? "확인 중…" : "연결 확인"),
       st.isTop && st.ping && pingBox(),
       manualBtn("linkbtn", "AI 없이 직접 업무지시 하기"),
       mineSection());
+  }
+
+  /* ---------- 방금 지시한 것 (이 화면을 여는 동안 최근 5건) + 바로 취소 ---------- */
+  function sentRows() {
+    const out = [];
+    for (const e of st.sent) {
+      const meta = `${e.due_date ? "마감 " + labelMD(e.due_date) : ""}${e.repeat !== "none" ? (e.due_date ? " · " : "") + REPEAT_KO[e.repeat] + " 반복" : ""}`;
+      for (const p of e.people) {
+        out.push(h("div", { class: "item col static", style: p.canceled ? "opacity:.55" : "" },
+          h("b", { style: p.canceled ? "text-decoration:line-through" : "" }, `${p.canceled ? "↩" : "✅"} ${p.t.display_name} · ${e.title}`),
+          meta && h("span", { class: "muted" }, meta),
+          !p.canceled && p.id && h("button", { type: "button", class: "btn ghost slim danger", disabled: !!p.busy, onclick: () => undoOne(p) }, p.busy ? "취소하는 중…" : "지시 취소")));
+      }
+    }
+    return out;
+  }
+
+  async function undoOne(p) {
+    if (!p?.id || p.busy || p.canceled) return;
+    p.busy = true; st.paintSent?.();
+    try {
+      needApi("tkCancel");
+      await withTimeout(api.tkCancel(p.id, st.isTop), 30000);
+      p.canceled = true;
+      st.open = st.open.filter((x) => x.id !== p.id);
+      toast("지시를 취소했어요", 2000);
+    } catch (e) {
+      toast(plainErrText(e), 4000);
+    } finally {
+      p.busy = false;
+    }
+    st.paintSent?.();
+  }
+
+  // 보낸 업무의 id 를 열린 업무에서 찾아 [지시 취소]를 켠다 (못 찾으면 버튼만 없다)
+  async function attachIds(entry) {
+    try { await withTimeout(fetchOpen(), 8000); } catch { return; }
+    const uid = st.me?.user_id;
+    const used = new Set(st.sent.flatMap((e) => e.people.map((p) => p.id)).filter(Boolean));
+    for (const p of entry.people) {
+      const m = st.open
+        .filter((x) => sameAssignee(x, p.t) && normTitle(x.title) === normTitle(entry.title) && (!uid || x.created_by === uid) && !used.has(x.id))
+        .sort((a, b) => str(b.created_at).localeCompare(str(a.created_at)))[0];
+      if (m) { p.id = m.id; used.add(m.id); }
+    }
+    if (!gone()) st.paintSent?.();
   }
 
   function errBox() {
@@ -321,10 +363,17 @@ export async function renderAiTask(root, opts = {}) {
     st.busy = true; st.err = null; st.ping = null; st.phase = "loading";
     startTick(); draw(true);
     let ok = false;
+    let plan = null;
     try {
       needApi("aiTaskParse");
       const res = fromResponse(await api.aiTaskParse(text));
       Object.assign(st, { res, today: res.today, card: res.card, rows: res.rows, groupOk: false });
+      // 받는 사람·업무·날짜가 모두 분명하면 확인 카드 없이 바로 지시한다. 조금이라도 애매하면 카드로 확인받는다
+      plan = quickPlan(res, text);
+      if (plan) {
+        try { await withTimeout(fetchOpen(), 5000); plan.fresh = true; } catch { /* 같은 업무 확인은 못 해도 진행 */ }
+        if (plan.targets.some((t) => findDup(t, plan.payload.title))) plan = null; // 같은 업무가 이미 있으면 카드로
+      }
       st.phase = "card";
       ok = true;
     } catch (e) {
@@ -333,8 +382,53 @@ export async function renderAiTask(root, opts = {}) {
     } finally {
       stopTick(); st.busy = false;
     }
+    if (plan) { await quickSend(plan); return; }
     draw(true);
     if (ok && !st.res.tooMany) loadOpen();
+  }
+
+  // 확인 카드 없이 바로 보내도 되는 경우만 계획을 돌려준다
+  function quickPlan(res, text) {
+    if (res.tooMany || !res.card || res.warnings.length) return null;
+    if (text.length > 150) return null; // 길게 붙여 넣은 글은 항상 카드로 확인
+    const c = res.card, today = res.today;
+    const title = c.title.trim().slice(0, 60);
+    if (!title) return null;
+    if (c.repeat !== "none" && !isDate(c.due_date)) return null;
+    if (isDate(c.due_date) && (c.due_date < today || c.due_date > addDays(today, 400))) return null;
+    if (c.repeat === "monthly" && isDate(c.due_date) && Number(c.due_date.slice(8, 10)) >= 29) return null;
+    const rows = res.rows;
+    if (!rows.length || rows.length > 5 || rows.some((r) => r.via !== "name" || r.status !== "ok" || !r.chosen)) return null;
+    const seen = new Set(), targets = [];
+    for (const r of rows) {
+      const p = r.cands.find((x) => x.user_id === r.chosen);
+      if (!p || seen.has(p.user_id)) return null;
+      seen.add(p.user_id);
+      targets.push({ user_id: p.user_id, display_name: p.display_name || r.mention, job_title: p.job_title, store_name: p.store_name });
+    }
+    return { targets, fresh: false, payload: { title, memo: c.memo.trim().slice(0, 200), due_date: isDate(c.due_date) ? c.due_date : null, repeat: c.repeat } };
+  }
+
+  async function quickSend(plan) {
+    if (gone()) { toast("화면을 떠나서 지시하지 않았어요", 3500); return; }
+    const { targets, payload } = plan;
+    st.busy = true;
+    st.payload = payload;
+    st.preIds = plan.fresh ? new Set(st.open.filter((x) => normTitle(x.title) === normTitle(payload.title)).map((x) => x.id)) : null;
+    st.batchStart = Date.now();
+    st.results = targets.map((t) => ({ t, state: "wait", note: "", tried: false }));
+    st.phase = "saving";
+    draw(true);
+    try { await runSend(st.results); } finally { st.busy = false; }
+    if (st.results.some((r) => r.state === "fail")) { st.phase = "result"; draw(true); finishNote(); refreshQuiet(); return; }
+    // 모두 보냈으면 입력 화면으로 돌아가 한 줄 기록만 남긴다
+    const entry = { title: payload.title, due_date: payload.due_date, repeat: payload.repeat, people: st.results.map((r) => ({ t: r.t, id: null, canceled: false, busy: false })) };
+    st.sent.unshift(entry);
+    st.sent.length = Math.min(st.sent.length, 5);
+    Object.assign(st, { phase: "input", text: "", err: null, res: null, card: null, rows: [], groupOk: false, payload: null, results: [] });
+    draw(true);
+    finishNote();
+    attachIds(entry);
   }
 
   // 열린 업무 목록(내가 볼 수 있는 범위). 같은 업무 경고와 '내가 지시한 업무'에 쓴다
