@@ -1,5 +1,6 @@
-// 프로젝트 피드 탭: 글쓰기·검색·태그·고정 글·사진 격자·댓글 (supabase/projects.sql, src/lib/pj-api.js, src/lib/img.js)
+// 프로젝트 피드 탭: 글쓰기·검색·태그·고정 글·사진 격자·댓글·읽음 확인 (supabase/projects.sql, projects-2.sql, src/lib/pj-api.js, src/lib/img.js)
 // 글·이름·파일 이름은 모두 글자로만 화면에 넣는다(innerHTML 안 씀). 피드 영역만 다시 그려서 열어 둔 댓글칸이 남는다.
+// 읽음: 프로젝트를 여는 것만으로는 읽음이 아니다. 글이 화면에 0.8초 이상 보이면 읽은 것으로 모아 두었다가 한꺼번에 저장한다.
 import { h, toast, modal, confirmDialog, copyText } from "../lib/ui.js";
 import { dateOf, fmtHM, labelMD, todayKST } from "../lib/kst.js";
 import { ALLOWED_EXT, checkFile, isImage, openLightbox } from "../lib/img.js";
@@ -7,6 +8,12 @@ import { ALLOWED_EXT, checkFile, isImage, openLightbox } from "../lib/img.js";
 const PAGE = 20;
 const MAX_PHOTOS = 10;
 const MAX_DOCS = 5;
+const DWELL_MS = 800;        // 글이 이만큼 보여야 읽은 것으로 본다
+const FLUSH_MS = 1500;       // 읽음 기록을 모아서 보내기 전 기다리는 시간
+const FLUSH_MAX_MS = 6000;   // 계속 스크롤해도 이 시간 안에는 한 번 보낸다
+const RETRY_MAX_MS = 60000;  // 못 보냈을 때 다시 보내는 간격의 최대(8초부터 두 배씩 늘어난다)
+const PEND_MAX = 300;        // 못 보낸 읽음 기록을 저장해 두는 최대 개수
+const RATIOS = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]; // 아주 긴 글은 60% 가 한 화면보다 커서, 촘촘히 재서 화면의 절반 이상 차지하면 보인 것으로 본다
 const IMG_EXTS = new Set(["jpg", "jpeg", "png", "gif", "webp", "heic", "heif"]);
 const DOC_ACCEPT = [...ALLOWED_EXT].filter((e) => !IMG_EXTS.has(e)).map((e) => "." + e).join(",");
 // 본문 속 http(s) 주소: 영문·숫자·주소 기호만 (한글 조사가 주소에 붙지 않게)
@@ -94,6 +101,28 @@ function dropDraft(key) {
   try { localStorage.removeItem(key); } catch { /* ignore */ }
 }
 
+// 아직 서버에 못 보낸 읽음 기록: 앱이 꺼져도 다음에 열 때 다시 보낸다(저장소를 못 쓰면 이 화면에 있는 동안만 다시 보낸다)
+function readPend(key) {
+  try {
+    const a = JSON.parse(localStorage.getItem(key) || "[]");
+    return Array.isArray(a) ? a.filter((x) => typeof x === "string" && x.length > 0 && x.length <= 40).slice(-PEND_MAX) : [];
+  } catch { return []; }
+}
+function editPend(key, add, del) {
+  try {
+    const cur = new Set(readPend(key));
+    for (const id of add) cur.add(id);
+    for (const id of del) cur.delete(id);
+    if (cur.size) localStorage.setItem(key, JSON.stringify([...cur].slice(-PEND_MAX)));
+    else localStorage.removeItem(key);
+  } catch { /* ignore */ }
+}
+// 다시 보내 봐야 소용없는 오류(권한 없음, 서버에 읽음 기능이 아직 없음): 이때만 모아 둔 기록을 버린다
+function isPermanent(e) {
+  if (!e) return false;
+  return ["42501", "42883", "42P01", "PGRST202", "PGRST205"].includes(String(e.code ?? "")) || /권한이 없어요|projects-2\.sql/.test(String(e.message ?? ""));
+}
+
 // 기다려 달라는 창 (저장·삭제 중에 다른 곳을 못 누르게 막는다)
 function progressDlg(title, text) {
   const line = h("p", { class: "pj-fd-prog", role: "status", "aria-live": "polite" }, text);
@@ -119,6 +148,15 @@ function notice(title, lines) {
         h("button", { class: "btn primary", onclick: close }, "확인")));
     document.body.append(ov);
   });
+}
+
+// 알림 서버(nudge)가 '아직 기다려요(wait)' 라고 하면 다시 보낼 수 있는 때를 덧붙인다
+function nudgeMsg(e) {
+  const msg = (e && e.message) || "알림을 보내지 못했어요";
+  const sec = e && e.code === "wait" ? Number(e.retry_after) : 0;
+  if (!(sec > 0) || /뒤|후/.test(msg)) return msg;
+  const t = sec >= 3600 ? `약 ${Math.ceil(sec / 3600)}시간` : `약 ${Math.max(1, Math.ceil(sec / 60))}분`;
+  return `${msg} (${t} 뒤에 다시 보낼 수 있어요)`;
 }
 
 // 줄이 길어 잘렸는지는 화면에 붙은 뒤에야 알 수 있어서, 붙인 다음 바로 한 번, 화면이 그려진 뒤 한 번 더 잰다
@@ -217,7 +255,16 @@ const CSS = `
 .pj-fd-file{display:flex;align-items:center;gap:8px;width:100%;min-height:44px;padding:6px 10px;border:1px solid var(--line);background:#faf5f0;border-radius:10px;text-align:left;cursor:pointer}
 .pj-fd-file .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.88rem}
 .pj-fd-file .sz{flex:none;color:var(--muted);font-size:.75rem}
-.pj-fd-foot{display:flex;align-items:center}
+.pj-fd-foot{display:flex;align-items:center;gap:8px}
+.pj-fd-un{margin-left:auto;flex:none;font-size:.8rem;font-weight:600;color:var(--muted);white-space:nowrap}
+button.pj-fd-un{min-height:40px;padding:0 12px;border:1px solid var(--line);background:#fff;border-radius:20px;cursor:pointer}
+button.pj-fd-un:active{background:#f3e9e2}
+.pj-fd-untitle{margin:0 0 2px;font-weight:700;word-break:break-word;overflow-wrap:anywhere}
+.pj-fd-unsub{margin:0 0 4px;font-size:.85rem;color:var(--muted)}
+.pj-fd-unh{margin:12px 0 6px;font-size:.9rem;font-weight:800;color:var(--red)}
+.pj-fd-unp{display:flex;align-items:baseline;gap:8px;padding:8px 10px;margin:4px 0;background:#faf5f0;border-radius:10px;font-size:.92rem}
+.pj-fd-unp .nm{font-weight:700;overflow-wrap:anywhere}
+.pj-fd-unp .jt{color:var(--muted);font-size:.78rem}
 .pj-fd-cmbtn{min-height:40px;padding:0 12px;border:1px solid var(--line);background:#fff;border-radius:20px;font-size:.85rem;font-weight:600;cursor:pointer}
 .pj-fd-cmbtn[aria-expanded=true]{background:#fff1e0;border-color:var(--warn)}
 .pj-fd-cm{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:8px}
@@ -270,10 +317,25 @@ export async function renderFeed(root, ctx) {
   const lastRead = ctx.lastRead ? ts(ctx.lastRead) : 0;
 
   // 화면에 보이는 값: 검색·필터, 불러온 글(rows)과 고정 글(pinned), 다음 쪽 기준(cursor)
-  const st = { q: "", tag: "", mine: false, rows: [], pinned: [], tags: [], hasMore: false, cursor: null, loading: true, reloading: false, err: "", moreBusy: false, seq: 0 };
+  // unreadOnly: 내가 안 읽은 글만 / counts: 글 id -> { unread, total } (글쓴이가 보는 '미확인 N명' 숫자)
+  const st = { q: "", tag: "", mine: false, unreadOnly: false, rows: [], pinned: [], tags: [], counts: new Map(), hasMore: false, cursor: null, loading: true, reloading: false, err: "", moreBusy: false, seq: 0, markBusy: false };
   const recs = new Map(); // 글 id -> { post, el, where, expanded, bodyOpen, cm } : 다시 그려도 열어 둔 댓글칸·펼침 상태가 남는다
   let focusId = ctx.postId || null; ctx.postId = null;
   let searchTimer = 0;
+
+  // 읽음 기록: 글이 보인 지 0.8초가 지나면 pend 에 모았다가 한꺼번에 보낸다
+  const readLocal = new Set(); // 이 화면에서 읽은 글 id (서버에 아직 안 갔거나 목록을 다시 받아도 NEW 가 다시 붙지 않게)
+  const pend = new Set();      // 서버에 보낼 글 id
+  const shown = new Set();     // 지금 화면에 충분히 보이는 글 id
+  const dwell = new Map();     // 글 id -> 읽음 타이머
+  let io = null, flushTimer = 0, flushTries = 0, flushP = null, pendSince = 0, watchTimer = 0, countSeq = 0, dead = false, unChip = null;
+  // 못 보낸 읽음은 계정·프로젝트마다 따로 저장해 둔다. 계정을 모르면 저장하지 않는다
+  const pendKey = "pj-pend:" + meId + ":" + pid;
+  const store = (add, del) => { if (meId) editPend(pendKey, add, del); };
+  if (meId && ctx.myRole) {
+    for (const id of readPend(pendKey)) { pend.add(id); readLocal.add(id); } // 지난번에 못 보낸 것: 읽은 글로 보고 다시 보낸다
+    if (pend.size) pendSince = Date.now();
+  }
 
   const searchIn = h("input", { class: "inp", type: "search", placeholder: "검색 (제목·내용)", "aria-label": "글 검색", enterkeyhint: "search", autocomplete: "off" });
   const chipsBox = h("div", { class: "pj-fd-chips" });
@@ -315,9 +377,204 @@ export async function renderFeed(root, ctx) {
     } catch (e) { toast(e.message, 5000); }
   }
 
+  /* ----- 읽음 확인: 글이 0.8초 이상 보이면 읽음, 모아서 한꺼번에 저장 ----- */
+  // 내가 안 읽은 새 글인가. 참여자만 해당하고, 내 글·이 화면에서 이미 읽은 글은 아니다
+  function isNewPost(p) {
+    if (!ctx.myRole || !p || p.author_id === meId || readLocal.has(p.id)) return false;
+    if (typeof p.read_by_me === "boolean") return !p.read_by_me;
+    return !!lastRead && ts(p.created_at) > lastRead; // 읽음 정보가 없는 옛 응답일 때만
+  }
+  // 불러온 글(고정 글 포함) 중 아직 안 읽은 글 수
+  function countNew() {
+    const ids = new Set();
+    let n = 0;
+    for (const p of [...st.pinned, ...st.rows]) {
+      if (ids.has(p.id)) continue;
+      ids.add(p.id);
+      if (isNewPost(p)) n++;
+    }
+    return n;
+  }
+  function unreadLabel() {
+    const n = countNew();
+    return "미확인만" + (n > 0 ? ` ${n}${st.hasMore && !st.unreadOnly ? "+" : ""}` : "");
+  }
+  function recount() {
+    if (unChip) unChip.textContent = unreadLabel();
+  }
+
+  function ensureIO() {
+    if (io || dead || typeof IntersectionObserver !== "function") return io;
+    io = new IntersectionObserver(onSeen, { threshold: RATIOS });
+    return io;
+  }
+  // 아직 안 읽은 글 카드(data-unread)만 지켜본다. 이미 지켜보는 카드를 또 넣어도 무해
+  function watchCards(scope) {
+    if (dead || !scope || !ctx.myRole) return;
+    const o = ensureIO();
+    if (!o) return;
+    const cards = scope.matches && scope.matches("article[data-unread]") ? [scope] : [...scope.querySelectorAll("article[data-unread]")];
+    for (const c of cards) o.observe(c);
+  }
+  // 카드를 지켜보기를 그만둔다(다시 그리거나 읽음이 된 뒤)
+  function unwatch(el) {
+    if (!el) return;
+    if (io) io.unobserve(el);
+    const id = el.getAttribute && el.getAttribute("data-post");
+    if (id) { shown.delete(id); stopDwell(id); }
+  }
+  // 목록을 통째로 다시 그리기 전: 지켜보던 것·재던 시간을 모두 비운다
+  function resetWatch() {
+    if (io) io.disconnect();
+    for (const t of dwell.values()) clearTimeout(t);
+    dwell.clear();
+    shown.clear();
+  }
+  function onSeen(entries) {
+    if (!alive()) { teardown(); return; }
+    for (const en of entries) {
+      const id = en.target.getAttribute("data-post");
+      if (!id) continue;
+      const vh = (en.rootBounds && en.rootBounds.height) || window.innerHeight;
+      // 글의 60% 이상, 또는 글이 길면 화면의 절반 이상이 보여야 보인 것
+      const on = en.isIntersecting && (en.intersectionRatio >= 0.6 || en.intersectionRect.height >= vh * 0.5);
+      if (on) { shown.add(id); startDwell(id); }
+      else { shown.delete(id); stopDwell(id); }
+    }
+  }
+  function startDwell(id) {
+    if (dead || dwell.has(id) || document.hidden || readLocal.has(id)) return;
+    dwell.set(id, setTimeout(() => commitRead(id), DWELL_MS));
+  }
+  function stopDwell(id) {
+    const t = dwell.get(id);
+    if (t === undefined) return;
+    clearTimeout(t);
+    dwell.delete(id);
+  }
+  // 0.8초 동안 계속 보였다: 읽음으로 치고, NEW 표시를 지우고, 보낼 목록에 넣는다
+  function commitRead(id) {
+    dwell.delete(id);
+    if (!alive()) { teardown(); return; }
+    const rec = recs.get(id);
+    if (!rec || document.hidden || !shown.has(id) || !isNewPost(rec.post)) return;
+    readLocal.add(id);
+    pend.add(id);
+    store([id], []); // 보내기 전에 앱이 꺼져도 다음에 다시 보내도록 적어 둔다
+    if (!pendSince) pendSince = Date.now();
+    const c = st.counts.get(id);
+    if (c && c.unread > 0) { c.unread -= 1; updateUn(rec); } // 내가 읽었으니 글쓴이가 보는 미확인 수에서도 하나 빠진다
+    clearBadge(rec);
+    recount();
+    scheduleFlush();
+  }
+  function clearBadge(rec) {
+    const el = rec.el;
+    if (!el) return;
+    unwatch(el);
+    el.removeAttribute("data-unread");
+    el.classList.remove("new");
+    for (const b of el.querySelectorAll(".pj-fd-new")) b.remove();
+  }
+  function scheduleFlush() {
+    if (flushTries > 0 && flushTimer) return; // 보내기에 실패해 기다리는 중이면 다시 보낼 때를 앞당기지 않는다
+    clearTimeout(flushTimer);
+    if (Date.now() - pendSince >= FLUSH_MAX_MS) { flush(); return; }
+    flushTimer = setTimeout(flush, FLUSH_MS);
+  }
+  // 모은 읽음을 100개씩 보낸다. 보낸 것만 모음에서 빼고, 못 보낸 것은 지우지 않고 두었다가 점점 느리게(최대 1분) 계속 다시 보낸다.
+  // 연결이 돌아오거나 앱이 다시 보이면 바로 다시 보낸다. 화면을 떠난 뒤에도 보낸다. 이미 보내는 중이면 그 결과를 기다리게만 한다
+  function flush() {
+    clearTimeout(flushTimer);
+    flushTimer = 0;
+    if (!flushP) flushP = sendPend().finally(() => { flushP = null; });
+    return flushP;
+  }
+  async function sendPend() {
+    let bad = null;
+    while (pend.size) {
+      const part = [...pend].slice(0, 100);
+      try {
+        await pj.markPostsRead(pid, part);
+      } catch (e) { bad = e; break; }
+      for (const id of part) pend.delete(id);
+      store([], part);
+    }
+    if (!pend.size) { pendSince = 0; flushTries = 0; return; }
+    if (isPermanent(bad)) { // 권한이 없거나 서버에 기능이 없다: 다시 해 봐야 소용없으니 버린다(화면의 읽음 표시는 그대로)
+      store([], [...pend]);
+      pend.clear();
+      pendSince = 0;
+      flushTries = 0;
+      return;
+    }
+    flushTries++;
+    if (!pendSince) pendSince = Date.now();
+    if (dead && flushTries > 6) return; // 화면을 떠난 뒤에는 몇 번만 다시 보낸다. 남은 것은 저장돼 있어 다음에 열 때 보낸다
+    clearTimeout(flushTimer); // 보내는 동안 새로 걸린 짧은 타이머가 있으면 걷고 늦춘 시간으로 바꾼다
+    flushTimer = setTimeout(flush, Math.min(RETRY_MAX_MS, 8000 * 2 ** (flushTries - 1)));
+  }
+  // 탭이 가려지면 재던 시간을 멈추고 지금까지 읽은 것을 보낸다. 다시 보이면 보이던 글의 시간을 처음부터 재고, 못 보낸 읽음도 다시 보낸다
+  function onVis() {
+    if (!alive()) { teardown(); return; }
+    if (document.hidden) {
+      for (const id of [...dwell.keys()]) stopDwell(id);
+      flush();
+    } else {
+      for (const id of shown) startDwell(id);
+      flushTries = 0;
+      flush();
+    }
+  }
+  function onHide() {
+    flush();
+  }
+  // 인터넷이 다시 연결되면 못 보낸 읽음을 바로 보낸다
+  function onOnline() {
+    flushTries = 0;
+    flush();
+  }
+  // 피드가 화면에서 사라졌다(탭을 바꿈·목록으로 나감·다시 그림): 관찰·타이머·리스너를 걷고 남은 읽음을 보낸다
+  function teardown() {
+    if (dead) return;
+    dead = true;
+    clearInterval(watchTimer);
+    clearTimeout(searchTimer);
+    if (io) { io.disconnect(); io = null; }
+    for (const t of dwell.values()) clearTimeout(t);
+    dwell.clear();
+    shown.clear();
+    document.removeEventListener("visibilitychange", onVis);
+    window.removeEventListener("pagehide", onHide);
+    window.removeEventListener("online", onOnline);
+    flush(); // 못 보내도 다시 보내기는 이어진다(화면이 사라져도 타이머는 남는다)
+  }
+
+  // 글쓴이가 보는 '👁 미확인 N명' 숫자: 불러온 쪽마다 한 번 받아 카드에 채운다
+  async function loadCounts() {
+    if (!alive()) return;
+    const my = ++countSeq;
+    try {
+      if (pend.size) await flush(); // 방금 읽은 것까지 센 숫자를 받는다
+      const m = await pj.unreadCounts(pid);
+      if (my !== countSeq || !alive()) return;
+      st.counts = m instanceof Map ? m : new Map();
+      for (const r of recs.values()) updateUn(r);
+    } catch { /* 숫자는 없어도 글은 보인다 */ }
+  }
+  function updateUn(rec) {
+    const el = rec.unEl;
+    if (!el) return;
+    const c = st.counts.get(rec.post.id);
+    const n = c ? Number(c.unread) || 0 : 0;
+    el.textContent = `👁 미확인 ${n}명`;
+    el.hidden = n <= 0;
+  }
+
   /* ----- 검색·필터·칩 ----- */
+  // 미확인만(unreadOnly)은 검색·태그·내 글만과 함께 쓸 수 있다(서버 함수가 같이 걸러 준다)
   function filtered() {
-    return !!(st.q || st.tag || st.mine);
+    return !!(st.q || st.tag || st.mine || st.unreadOnly);
   }
 
   function applySearch() {
@@ -335,7 +592,7 @@ export async function renderFeed(root, ctx) {
     load({ tags: false });
   }
   function resetFilters() {
-    st.q = ""; st.tag = ""; st.mine = false;
+    st.q = ""; st.tag = ""; st.mine = false; st.unreadOnly = false;
     searchIn.value = "";
     clearTimeout(searchTimer);
     renderChips();
@@ -346,6 +603,11 @@ export async function renderFeed(root, ctx) {
   function renderChips() {
     const top = st.tags.slice(0, 10);
     const kids = [chip("내 글만", st.mine, () => setFilter({ mine: !st.mine }))];
+    unChip = null;
+    if (ctx.myRole) {
+      unChip = chip(unreadLabel(), st.unreadOnly, () => setFilter({ unreadOnly: !st.unreadOnly }));
+      kids.push(unChip, h("button", { type: "button", class: "linkbtn", onclick: markAll }, "모두 읽음"));
+    }
     for (const t of top) kids.push(chip("#" + t.tag, st.tag === t.tag, () => setFilter({ tag: st.tag === t.tag ? "" : t.tag })));
     if (st.tag && !top.some((t) => t.tag === st.tag)) kids.push(chip("#" + st.tag, true, () => setFilter({ tag: "" })));
     if (filtered()) kids.push(chip("✕ 해제", false, () => { resetFilters(); load({ tags: false }); }));
@@ -380,7 +642,7 @@ export async function renderFeed(root, ctx) {
     try {
       const f = filtered();
       const [pg, pins, tg] = await Promise.all([
-        pj.posts(pid, { q: st.q, tag: st.tag, mine: st.mine, limit: want }),
+        pj.posts(pid, { q: st.q, tag: st.tag, mine: st.mine, unreadOnly: st.unreadOnly, limit: want }),
         f ? Promise.resolve([]) : pj.pinnedPosts(pid),
         opts.tags === false ? Promise.resolve(null) : pj.tags(pid).catch(() => null),
       ]);
@@ -400,7 +662,16 @@ export async function renderFeed(root, ctx) {
     renderChips();
     drawList();
     if (quiet && alive()) window.scrollTo(0, y);
-    if (focusId) { const id = focusId; focusId = null; focusPost(id); }
+    if (!st.err) loadCounts();
+    // 알림·링크로 연 글: 첫 쪽에 없는 오래된 글이면 찾을 때까지 다음 쪽을 받아 온 뒤 이동한다. 불러오기에 실패했으면 다시 시도할 때를 위해 남겨 둔다
+    if (focusId && !st.err) {
+      const id = focusId;
+      const found = await findPost(id, my);
+      if (my !== st.seq || !alive()) return; // 그 사이 다시 불러오기 시작했으면 그쪽에 맡긴다
+      focusId = null;
+      if (found) focusPost(id);
+      else if (found === false) toast("글을 찾지 못했어요. 오래된 글이거나 지워진 글이에요", 4000);
+    }
   }
 
   async function more() {
@@ -409,7 +680,7 @@ export async function renderFeed(root, ctx) {
     drawMore();
     const my = st.seq;
     try {
-      const pg = await pj.posts(pid, { before: st.cursor, q: st.q, tag: st.tag, mine: st.mine, limit: PAGE });
+      const pg = await pj.posts(pid, { before: st.cursor, q: st.q, tag: st.tag, mine: st.mine, unreadOnly: st.unreadOnly, limit: PAGE });
       if (my === st.seq && alive()) {
         const have = new Set(st.rows.map((r) => r.id));
         const add = pg.rows.filter((r) => !have.has(r.id));
@@ -420,10 +691,28 @@ export async function renderFeed(root, ctx) {
         const els = add.filter((r) => !pinIds.has(r.id)).map((r) => cardFor(recOf(r), "list"));
         listBox.append(...els);
         afterInsert(listBox);
+        recount();
+        loadCounts();
       }
     } catch (e) { toast(e.message, 4000); }
     st.moreBusy = false;
     if (alive()) drawMore();
+  }
+
+  // 화면에 그려진 글을 찾는다. 없으면 다음 쪽을 이어 받는다(8번까지, 약 160개 글).
+  // true: 찾음 / false: 끝까지 봤는데 없음 / null: 불러오다 멈춤(실패·다시 불러오기 시작·화면 떠남 — 안내는 이미 나갔거나 필요 없다)
+  async function findPost(id, my) {
+    const here = () => { const r = recs.get(id); return !!(r && r.el && r.el.isConnected); };
+    for (let i = 0; i < 8; i++) {
+      if (here()) return true;
+      if (!st.hasMore) return false;
+      if (!alive() || my !== st.seq) return null;
+      if (st.moreBusy) { await new Promise((res) => setTimeout(res, 300)); continue; } // 누가 이미 받는 중이면 끝나길 잠깐 기다린다
+      const n = st.rows.length;
+      await more();
+      if (st.rows.length === n && st.hasMore) return null; // 더 받지 못했다(more 가 오류를 알렸다)
+    }
+    return here();
   }
 
   function focusPost(id) {
@@ -437,7 +726,7 @@ export async function renderFeed(root, ctx) {
   /* ----- 그리기 ----- */
   function recOf(post) {
     let r = recs.get(post.id);
-    if (!r) { r = { post, el: null, where: "list", expanded: false, bodyOpen: false, cm: null, cmBtn: null, cmHost: null }; recs.set(post.id, r); }
+    if (!r) { r = { post, el: null, where: "list", expanded: false, bodyOpen: false, cm: null, cmBtn: null, cmHost: null, unEl: null }; recs.set(post.id, r); }
     else r.post = post;
     return r;
   }
@@ -448,6 +737,7 @@ export async function renderFeed(root, ctx) {
   }
   function refresh(rec) {
     const old = rec.el;
+    unwatch(old);
     const neu = cardFor(rec, rec.where);
     if (old && old.parentNode) old.replaceWith(neu);
     afterInsert(neu);
@@ -455,6 +745,7 @@ export async function renderFeed(root, ctx) {
   function afterInsert(scope) {
     fillThumbs(scope);
     checkClamps(scope);
+    watchCards(scope);
   }
 
   function drawMore() {
@@ -466,6 +757,7 @@ export async function renderFeed(root, ctx) {
   function drawList() {
     if (!alive()) return;
     closeMenu();
+    resetWatch();
     const pins = filtered() ? [] : st.pinned;
     const pinIds = new Set(pins.map((p) => p.id));
     if (pins.length) {
@@ -480,17 +772,14 @@ export async function renderFeed(root, ctx) {
     } else if (st.err) {
       listBox.replaceChildren(h("p", { class: "err" }, "불러오기 실패: " + st.err), h("button", { type: "button", class: "btn ghost slim", onclick: () => load() }, "다시 시도"));
     } else {
-      const shown = st.rows.filter((r) => !pinIds.has(r.id));
-      if (shown.length) listBox.replaceChildren(...shown.map((p) => cardFor(recOf(p), "list")));
+      const rest = st.rows.filter((r) => !pinIds.has(r.id));
+      if (rest.length) listBox.replaceChildren(...rest.map((p) => cardFor(recOf(p), "list")));
       else if (pins.length) listBox.replaceChildren();
-      else listBox.replaceChildren(h("p", { class: "muted" }, filtered() ? "찾는 글이 없어요" : ctx.canWrite ? "아직 글이 없어요. 첫 글을 남겨 보세요." : "아직 글이 없어요"));
+      else listBox.replaceChildren(h("p", { class: "muted" }, st.unreadOnly ? "안 읽은 글이 없어요" : filtered() ? "찾는 글이 없어요" : ctx.canWrite ? "아직 글이 없어요. 첫 글을 남겨 보세요." : "아직 글이 없어요"));
     }
     drawMore();
     afterInsert(wrap);
-  }
-
-  function isNewPost(p) {
-    return !!lastRead && p.author_id !== meId && ts(p.created_at) > lastRead;
+    recount();
   }
 
   // 접어 둔 고정 글 한 줄
@@ -563,9 +852,16 @@ export async function renderFeed(root, ctx) {
     rec.cmBtn = cmBtn;
     rec.cmHost = cmHost;
     if (rec.cm && rec.cm.open) cmHost.append(rec.cm.el);
-    kids.push(h("div", { class: "pj-fd-foot" }, cmBtn), cmHost);
+    // 안 읽은 사람 수: 글쓴이·관리자는 눌러서 이름을 보고, 나머지는 숫자만 본다
+    const canNames = ctx.canAdmin || (!!meId && p.author_id === meId);
+    const unEl = canNames
+      ? h("button", { type: "button", class: "pj-fd-un", hidden: true, onclick: () => showUnread(rec) })
+      : h("span", { class: "pj-fd-un", hidden: true });
+    rec.unEl = unEl;
+    updateUn(rec);
+    kids.push(h("div", { class: "pj-fd-foot" }, cmBtn, unEl), cmHost);
 
-    return h("article", { class: "pj-fd-card" + (isNew ? " new" : "") + (rec.where === "pin" ? " pinned" : ""), "data-post": p.id }, kids);
+    return h("article", { class: "pj-fd-card" + (isNew ? " new" : "") + (rec.where === "pin" ? " pinned" : ""), "data-post": p.id, "data-unread": isNew ? "1" : null }, kids);
   }
 
   /* ----- 사진·파일 ----- */
@@ -807,6 +1103,102 @@ export async function renderFeed(root, ctx) {
     } catch (e) { toast(e.message, 5000); }
   }
 
+  /* ----- 미확인 명단 · 모두 읽음 · 새 글 알림 ----- */
+  // 글쓴이·관리자만 부른다(서버도 다시 확인한다). 읽은 사람/안 읽은 사람 이름과 [미확인자에게 알림]
+  async function showUnread(rec) {
+    const p = rec.post;
+    const c0 = st.counts.get(p.id);
+    const sub = h("p", { class: "pj-fd-unsub" }, c0 && c0.total > 0 ? `읽음 ${Math.max(0, c0.total - c0.unread)}/${c0.total}` : "");
+    const body = h("div", null, h("p", { class: "muted" }, "불러오는 중…"));
+    const acts = h("div");
+    const close = () => ov.remove();
+    const ov = h("div", { class: "overlay", onclick: (e) => { if (e.target === ov) close(); } },
+      h("div", { class: "dialog", role: "dialog", "aria-modal": "true" },
+        h("h2", null, "읽음 확인"),
+        h("p", { class: "pj-fd-untitle" }, clip(String(p.title || p.body || "").split("\n")[0], 50) || "(내용 없음)"),
+        sub, body, acts,
+        h("button", { type: "button", class: "btn ghost", onclick: close }, "닫기")));
+    document.body.append(ov);
+
+    let rows;
+    try {
+      rows = await pj.unreadPeople(p.id);
+    } catch (e) {
+      if (ov.isConnected) body.replaceChildren(h("p", { class: "err" }, e.message));
+      return;
+    }
+    if (!ov.isConnected) return;
+    const unread = rows.filter((r) => !r.has_read);
+    const read = rows.filter((r) => r.has_read);
+    sub.textContent = rows.length ? `읽음 ${read.length}/${rows.length}` : "";
+    if (alive()) { st.counts.set(p.id, { unread: unread.length, total: rows.length }); updateUn(rec); } // 카드 숫자도 맞춘다
+
+    const person = (r) => h("div", { class: "pj-fd-unp" }, h("span", { class: "nm" }, r.user_name || "이름 없음"), r.job_title ? h("span", { class: "jt" }, r.job_title) : null);
+    if (!rows.length) {
+      body.replaceChildren(h("p", { class: "muted" }, "읽음을 확인할 참여자가 없어요"));
+      return;
+    }
+    const kids = [h("h3", { class: "pj-fd-unh" }, `안 읽은 사람 (${unread.length}명)`)];
+    if (unread.length) kids.push(...unread.map(person));
+    else kids.push(h("p", { class: "muted" }, "모두 읽었어요"));
+    if (read.length) kids.push(h("h3", { class: "pj-fd-unh" }, `읽은 사람 (${read.length}명)`), ...read.map(person));
+    body.replaceChildren(...kids);
+
+    if (unread.length && ctx.project.status === "active") {
+      const nb = h("button", { type: "button", class: "btn primary" }, "🔔 미확인자에게 알림");
+      nb.onclick = async () => {
+        nb.disabled = true;
+        try {
+          const r = await pj.nudge(p.id);
+          if (r.sent > 0) {
+            nb.textContent = "알림을 보냈어요";
+            toast(`${r.sent}명에게 알림을 보냈어요`, 3500);
+          } else {
+            // 한 명에게도 못 갔다: 서버가 6시간 칸을 돌려줬으니 버튼을 다시 쓸 수 있다
+            nb.disabled = false;
+            toast(r.recipients > 0 ? "알림을 켠 사람이 없어요. 직접 알려 주세요" : "알림을 받을 수 있는 사람이 없어요 (알림을 끈 사람은 빠져요)", 4500);
+          }
+        } catch (e) {
+          nb.disabled = false;
+          toast(nudgeMsg(e), 5000);
+        }
+      };
+      acts.append(nb);
+    }
+  }
+
+  // 지금까지 올라온 글을 모두 읽은 것으로 한다(기준 시각을 지금으로 옮긴다)
+  async function markAll() {
+    if (!ctx.myRole || st.markBusy || !alive()) return;
+    // 불러온 글이 전부이고(걸러 보는 중이 아니고) 안 읽은 글이 없으면 물어볼 필요가 없다
+    if (!st.hasMore && !filtered() && !countNew()) { toast("안 읽은 글이 없어요", 1800); return; }
+    if (!(await confirmDialog("모두 읽음으로 할까요?", ["지금까지 올라온 글을 모두 읽은 것으로 표시해요", "글쓴이가 보는 '미확인 N명'에서도 빠져요"], "취소", "모두 읽음"))) return;
+    if (!alive()) return;
+    st.markBusy = true;
+    try {
+      await pj.markAllRead(pid);
+      // 기준 시각이 옮겨졌으니 모아 둔 글별 기록은 이제 필요 없다. 실패했다면 건드리지 않아 나중에 그대로 보낸다
+      clearTimeout(flushTimer);
+      flushTimer = 0;
+      flushTries = 0;
+      const done = [...pend];
+      pend.clear();
+      pendSince = 0;
+      store([], done);
+      toast("모두 읽음으로 표시했어요", 1800);
+      if (alive()) await load({ quiet: true, tags: false });
+    } catch (e) { toast(e.message, 5000); }
+    st.markBusy = false;
+  }
+
+  // 새 글을 올린 뒤 알림을 부탁한다. 받는 사람은 서버가 정한다. 실패해도 글은 이미 저장됐고, 못 보냈으면 true 를 돌려준다
+  async function notifyNew(postId) {
+    try {
+      const r = await pj.notifyPost(postId);
+      return !!(r && r.limited);
+    } catch { return true; }
+  }
+
   /* ----- 글쓰기·수정 창 ----- */
   // rec 가 있으면 그 글을 고친다. 글을 먼저 저장하고 → 사진·파일을 한 장씩 올린다(일부 실패해도 글은 남는다)
   async function compose(rec) {
@@ -995,6 +1387,9 @@ export async function renderFeed(root, ctx) {
         prog.close();
       }
 
+      // 새 글이면 참여자에게 알림을 부탁한다(사진·파일까지 올린 뒤라 알림을 눌렀을 때 글이 다 보인다). 기다리지 않고, 실패해도 글은 그대로
+      const notifyP = !editing ? notifyNew(saved.id) : null;
+
       // 화면 반영
       if (alive()) {
         if (editing) {
@@ -1016,6 +1411,13 @@ export async function renderFeed(root, ctx) {
       for (const x of failed) lines.push(`${clip(x.name, 40)} — ${x.msg}`);
       if (asFile.length) lines.push(`사진으로 줄일 수 없는 형식이라 파일로 올렸어요: ${asFile.map((n) => clip(n, 30)).join(", ")}`);
       if (failed.length) lines.push("글은 저장됐어요. ⋯ 메뉴의 수정에서 다시 올릴 수 있어요");
+      // 알림을 못 보냈으면 '저장했어요' 안내가 사라진 뒤에 알린다(같은 자리에 겹쳐 뜨지 않게)
+      const savedAt = Date.now();
+      if (notifyP) {
+        notifyP.then((bad) => {
+          if (bad) setTimeout(() => toast("글은 올렸어요. 알림은 보내지 못했어요", 4500), lines.length ? 0 : Math.max(0, 2100 - (Date.now() - savedAt)));
+        });
+      }
       if (lines.length) await notice(failed.length ? "글은 저장했지만 일부는 안 됐어요" : "저장했어요", lines);
       else toast("저장했어요", 2000);
       return;
@@ -1025,6 +1427,14 @@ export async function renderFeed(root, ctx) {
   // 시작: 위의 함수와 값이 모두 준비된 다음에 그린다
   root.replaceChildren(wrap);
   alive(); // 붙은 것을 한 번 기록해 둔다(이후 떨어지면 끝난 것으로 본다)
+  // 탭을 바꾸거나 목록으로 나가면 칸째 떨어져 알려 주는 곳이 없으므로, 떨어졌는지 1초마다 살핀다(떨어지면 남은 읽음을 보내고 정리)
+  document.addEventListener("visibilitychange", onVis);
+  window.addEventListener("pagehide", onHide);
+  window.addEventListener("online", onOnline);
+  watchTimer = setInterval(() => { if (!alive()) teardown(); }, 1000);
+  // 탭 전환·목록으로 나갈 때 projects.js 가 먼저 불러 준다: 모아 둔 읽음을 바로 보내고, 다 보낼 때까지 목록 새로고침이 기다리게 한다(위 1초 살핌은 예비)
+  if (typeof ctx.onLeave === "function") ctx.onLeave(() => { teardown(); return flush(); });
+  if (pend.size) scheduleFlush(); // 지난번에 못 보낸 읽음이 있으면 이번에 보낸다
   renderChips();
   await load();
 }

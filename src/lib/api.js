@@ -46,6 +46,10 @@ const demo = {
   async sgSet() {},
   async sgDelete() {},
   async pj() { throw new Error("데모 모드에서는 프로젝트를 쓸 수 없어요"); },
+  async pushStatus() { return { supported: false, permission: "unsupported" }; },
+  async pushTest() { throw new Error("데모 모드에서는 알림을 시험할 수 없어요"); },
+  async aiTaskParse() { throw new Error("데모 모드에서는 AI를 쓸 수 없어요"); },
+  async aiPing() { throw new Error("데모 모드에서는 AI를 쓸 수 없어요"); },
   async libList() { return []; },
   async libUpload() { throw new Error("데모 모드에서는 파일을 올릴 수 없어요"); },
   async libUrl() { throw new Error("데모 모드에서는 파일을 열 수 없어요"); },
@@ -234,6 +238,31 @@ const remote = {
     if (error) throw error;
     LS.set("woo_push_on", true);
   },
+  // 알림 점검: 이 기기가 알림을 받을 수 있는 상태인지 단계별로 알려 준다
+  async pushStatus() {
+    const ua = navigator.userAgent;
+    const st = {
+      secure: isSecureContext, standalone: matchMedia("(display-mode: standalone)").matches, ios: /iPhone|iPad|iPod/i.test(ua), kakao: /KAKAOTALK/i.test(ua),
+      sw: "serviceWorker" in navigator, push: "PushManager" in window, notif: typeof Notification !== "undefined",
+      permission: typeof Notification !== "undefined" ? Notification.permission : "unsupported", hasSub: false, saved: false,
+    };
+    st.supported = st.sw && st.push && st.notif;
+    if (!st.supported) return st;
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      st.hasSub = !!sub;
+      if (sub) {
+        const { data } = await (await sb()).from("push_subscriptions").select("id").eq("endpoint", sub.endpoint).limit(1);
+        st.saved = !!data?.length;
+      }
+    } catch { /* 점검 중 오류는 상태에 반영하지 않고 넘어간다 */ }
+    return st;
+  },
+  pushTest() { return this.fn("project-notify", { action: "test" }); }, // 내 기기들로 시험 알림을 보낸다(서버에서 보냄)
+  // 말로 업무지시(AI): 해석만 한다. 저장은 사람이 카드를 확인하고 tkCreate 로 한다 (ai 함수, ai.sql)
+  aiTaskParse(text) { return this.fn("ai", { action: "parse_task", text }); },
+  aiPing() { return this.fn("ai", { action: "ping" }); },
   // Edge Function 호출. 실패하면 서버가 준 한국어 메시지와 code를 담은 Error를 던진다
   async fn(name, body) {
     const { data, error } = await (await sb()).functions.invoke(name, { body: curStore ? { store_id: curStore.id, ...body } : body });

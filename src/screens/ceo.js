@@ -19,8 +19,10 @@ export async function renderCeo(root, profile) {
   let accountsOpen = false; // 전체 계정 관리 화면
   let sgOpen = false, sgNew = 0; // 건의함 화면(대표만)
   let tkOpen = false; // 전 직원 업무지시 화면
+  let pjNew = 0; // 프로젝트 안 읽은 글(내가 참여한 프로젝트)
   let tk = null; // 업무지시 현황 {today, open, done}
   let libOpen = false; // 서식·자료함 화면
+  let aiOpen = false; // 말로 업무지시(AI) 화면
   // 프로젝트 화면(대표·부대표). ?p=프로젝트&post=글 주소로 들어오면 바로 그 프로젝트를 연다
   const dl = new URLSearchParams(location.search);
   let pjOpts = { openId: dl.get("p") || null, postId: dl.get("post") || null };
@@ -33,15 +35,22 @@ export async function renderCeo(root, profile) {
 
   async function load() {
     try {
+      // 보고판용 자료는 한꺼번에 불러와서 첫 화면이 느려지지 않게 한다(실패해도 그 칸만 숨김)
+      const extra = Promise.all([
+        profile.role === "owner" ? api.sgList().catch(() => []) : Promise.resolve([]),
+        api.tkAll(true).catch(() => null), // 전 직원 업무지시 현황
+        Promise.all(["work_logs", "work_events", "work_notes"].map((t) => api.wkList(t, true))).then(([logs, events, notes]) => ({ logs, events, notes })).catch(() => null),
+        api.tkPeople(true).catch(() => ({ people: [] })),
+      ]);
       [stores, ov] = await Promise.all([api.listStores(), api.overview()]);
-      if (profile.role === "owner") sgNew = (await api.sgList().catch(() => [])).filter((r) => r.status === "새글").length;
-      tk = await api.tkAll(true).catch(() => null); // 전 직원 업무지시 현황(없으면 숨김)
-      wk = await Promise.all(["work_logs", "work_events", "work_notes"].map((t) => api.wkList(t, true))).then(([logs, events, notes]) => ({ logs, events, notes })).catch(() => null);
-      people = (await api.tkPeople(true).catch(() => ({ people: [] }))).people;
+      const [sg, t, w, pp] = await extra;
+      sgNew = sg.filter((r) => r.status === "새글").length; tk = t; wk = w; people = pp.people;
       err = "";
       if (sel !== "all" && !stores.some((s) => s.id === sel)) sel = "all";
     } catch (e) { err = e.message; }
     draw();
+    // 프로젝트 안 읽음 숫자는 따로(느려도 첫 화면을 막지 않는다)
+    import("./projects.js").then((m) => m.pjSummary()).then((s) => { if (s.newPosts !== pjNew) { pjNew = s.newPosts; if (sel === "all" && !pjOpen && !libOpen && !wkOpen && !tkOpen && !sgOpen && !accountsOpen) draw(); } }).catch(() => {});
   }
 
   function choose(id) {
@@ -97,6 +106,7 @@ export async function renderCeo(root, profile) {
       h("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin:10px 0" },
         tk && tile("📌", "업무지시", `진행 ${open.length}건`, `밀림 ${late.length} · 오늘 완료 ${doneToday.length}`, late.length ? "err" : "", () => { tkOpen = true; draw(); }),
         reps.length > 0 && tile("📝", "일일보고", `${repOk} / ${reps.length} 제출`, repOk === reps.length ? "모두 제출" : "미제출 " + reps.filter((s) => !s.report.submitted).map((s) => SHORT[s.app_key] ?? s.name).join(", "), repOk < reps.length ? "err" : "ok-text", () => choose(reps.find((s) => !s.report.submitted)?.id ?? reps[0].id)),
+        tile("📂", "프로젝트", pjNew ? `안 읽음 ${pjNew}` : "새 글 없음", "눌러서 보기", pjNew ? "err" : "", () => { pjOpen = true; draw(); }),
         profile.role === "owner" && tile("💌", "건의함", sgNew ? `새 건의 ${sgNew}` : "새 건의 없음", "눌러서 보기", sgNew ? "err" : "", () => { sgOpen = true; draw(); })),
       recent.length > 0 && h("div", null, h("div", { class: "muted", style: "font-size:12px;margin:4px 0" }, "최근 업무 보고"),
         recent.map((r) => h("div", { class: "srow", style: "align-items:flex-start" }, h("span", { class: r.cls }, r.icon + " " + r.text, h("div", { class: "muted", style: "font-size:12px" }, r.sub))))),
@@ -111,8 +121,9 @@ export async function renderCeo(root, profile) {
     const wrote = new Set(logs.map((l) => l.author_id));
     const missing = people.filter((p) => !wrote.has(p.user_id));
     const events = wk.events.filter((e) => !e.done);
-    const upcoming = events.filter((e) => e.ev_date >= today).sort((a, b) => (a.ev_date + a.ev_time).localeCompare(b.ev_date + b.ev_time)).slice(0, 6);
-    const overdue = events.filter((e) => e.ev_date < today).length;
+    const endOf = (e) => e.end_date || e.ev_date;
+    const upcoming = events.filter((e) => endOf(e) >= today).sort((a, b) => (a.ev_date + a.ev_time).localeCompare(b.ev_date + b.ev_time)).slice(0, 6);
+    const overdue = events.filter((e) => endOf(e) < today).length;
     const notes = wk.notes.slice(0, 5);
     const head = (t, extra) => h("div", { style: "margin:12px 0 4px;display:flex;justify-content:space-between;align-items:baseline" }, h("b", null, t), extra);
     return h("div", null,
@@ -124,7 +135,7 @@ export async function renderCeo(root, profile) {
         l.blockers && h("div", { class: "err", style: "white-space:pre-wrap;margin-top:4px" }, "막힌 점  " + l.blockers))) : h("p", { class: "muted", style: "margin:4px 0" }, "오늘 작성된 일지가 아직 없어요"),
       missing.length > 0 && people.length > 0 && h("p", { class: "muted", style: "font-size:12px;margin:4px 0" }, "미작성: " + missing.slice(0, 12).map((p) => p.display_name).join(", ") + (missing.length > 12 ? ` 외 ${missing.length - 12}명` : "")),
       head("📅 다가오는 일정", overdue ? h("span", { class: "err", style: "font-size:12px" }, `결과 없이 지난 일정 ${overdue}건`) : null),
-      upcoming.length ? upcoming.map((e) => h("div", { class: "srow" }, h("span", null, `${labelMD(e.ev_date)}${e.ev_time ? " " + e.ev_time : ""} · ${e.title}`), h("span", { class: "muted" }, `${sname(e.store_id)} ${e.author_name}`))) : h("p", { class: "muted", style: "margin:4px 0" }, "예정된 일정이 없어요"),
+      upcoming.length ? upcoming.map((e) => h("div", { class: "srow" }, h("span", null, `${labelMD(e.ev_date)}${e.end_date && e.end_date !== e.ev_date ? "~" + labelMD(e.end_date) : ""}${e.ev_time ? " " + e.ev_time : ""} · ${e.title}`), h("span", { class: "muted" }, `${sname(e.store_id)} ${e.author_name}`))) : h("p", { class: "muted", style: "margin:4px 0" }, "예정된 일정이 없어요"),
       head("🗂 최근 기록함", null),
       notes.length ? notes.map((n) => h("div", { class: "srow" }, h("span", null, n.title, n.tags ? h("span", { class: "muted", style: "font-size:12px" }, "  " + n.tags.split(",").map((x) => "#" + x.trim()).filter((x) => x.length > 1).join(" ")) : null), h("span", { class: "muted" }, `${sname(n.store_id)} ${n.author_name}`))) : h("p", { class: "muted", style: "margin:4px 0" }, "기록이 없어요"),
       h("button", { class: "btn ghost slim", style: "margin-top:8px", onclick: () => { wkOpen = true; draw(); } }, "🗂 전체 업무 기록 열기"));
@@ -136,6 +147,7 @@ export async function renderCeo(root, profile) {
       h("section", { class: "card" }, h("h2", null, "오늘 한눈에"),
         totalBad > 0 ? h("p", { class: "err" }, `확인이 필요한 항목 ${totalBad}건`) : h("p", { class: "muted" }, "지금 밀린 항목이 없어요 👍"),
         board()),
+      h("button", { class: "btn primary", style: "width:100%;margin-top:8px", onclick: () => { aiOpen = true; draw(); } }, "🗣 말로 업무지시 (AI)"),
       h("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin:8px 0" },
         h("button", { class: "btn primary", style: "flex:1", onclick: () => { tkOpen = true; draw(); } }, "📌 업무지시 (전 직원)"),
         h("button", { class: "btn primary", style: "flex:1", onclick: () => { libOpen = true; draw(); } }, "📁 서식·자료함"),
@@ -170,6 +182,13 @@ export async function renderCeo(root, profile) {
     return holder;
   }
 
+  function aiView() {
+    const holder = h("div");
+    import("./ai-task.js").then((m) => m.renderAiTask(holder, { onBack: () => { aiOpen = false; draw(); } }))
+      .catch((e) => holder.replaceChildren(h("p", { class: "err", style: "padding:16px" }, "말로 업무지시 화면을 불러오지 못했어요: " + e.message)));
+    return holder;
+  }
+
   function libView() {
     const holder = h("div");
     renderLibrary(holder, { onBack: () => { libOpen = false; draw(); } });
@@ -200,9 +219,11 @@ export async function renderCeo(root, profile) {
     const y = scrollY;
     if (sel === "all") api.setStore(null);
     root.replaceChildren(h("div", { class: "page", style: "padding-bottom:0" }, chips()),
-      err ? h("div", { class: "page" }, h("p", { class: "err" }, "불러오기 실패: " + err), h("button", { class: "btn ghost", onclick: load }, "다시 시도"))
+      // 알림을 눌러 들어온 프로젝트는 다른 자료가 늦거나 실패해도 바로 열린다
+      pjOpen && sel === "all" ? pjView()
+        : err ? h("div", { class: "page" }, h("p", { class: "err" }, "불러오기 실패: " + err), h("button", { class: "btn ghost", onclick: load }, "다시 시도"))
         : !ov ? h("div", { class: "page" }, h("p", { class: "muted" }, "불러오는 중…"))
-        : sel === "all" ? (pjOpen ? pjView() : libOpen ? libView() : wkOpen ? wkView() : tkOpen ? tkView() : sgOpen ? sgView() : accountsOpen ? accountsView() : h("div", { class: "page" }, allView())) : storeView());
+        : sel === "all" ? (aiOpen ? aiView() : pjOpen ? pjView() : libOpen ? libView() : wkOpen ? wkView() : tkOpen ? tkView() : sgOpen ? sgView() : accountsOpen ? accountsView() : h("div", { class: "page" }, allView())) : storeView());
     scrollTo(0, y);
   }
 

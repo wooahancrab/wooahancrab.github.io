@@ -43,6 +43,7 @@ function shell(profile, content) {
       h("img", { src: "/icons/logo-mark.png", class: "top-logo", alt: "" }),
       h("b", null, APP.key === "ceo" ? APP.name : profile.role === "owner" || profile.role === "deputy" ? APP.name : profile.store_display),
       h("span", { class: "who" }, `${ROLE_LABEL[profile.role] ?? profile.role}${isDemo ? " · 데모" : ""}`),
+      h("button", { class: "linkbtn", onclick: () => import("./screens/push-check.js").then((m) => m.openPushCheck()).catch((e) => toast("알림 점검을 열지 못했어요: " + e.message, 5000)) }, "알림"),
       h("button", { class: "linkbtn", onclick: async () => {
         const pw = await promptPassword("내 새 비밀번호");
         if (!pw) return;
@@ -117,6 +118,8 @@ function tabbedHome(view, profile, tabs) {
     if (profile.role === "supervisor" || profile.role === "manager") extra.push(["chkb", "점검 현황", (pane) => renderChecklistAdmin(pane, null, { master: false, itemsView: false })]);
     tabs = [...extra, ...tabs];
   }
+  // 말로 업무지시(AI): 매니저·중간관리자는 내 담당 직원에게만(서버가 정함)
+  if (profile.role === "manager" || profile.role === "supervisor") tabs = [...tabs, ["ai", "AI지시", (pane) => import("./screens/ai-task.js").then((m) => m.renderAiTask(pane, {})).catch((e) => pane.replaceChildren(h("p", { class: "err", style: "padding:16px" }, "화면을 불러오지 못했어요: " + e.message)))]];
   tabs = [...tabs, ["lib", "자료", renderLibrary], ["sg", "건의", renderSuggest]]; // 자료함(서식·파일), 건의함: 모든 직원
   let tab = tabs[0][0];
   const body = h("div", { id: "mbody" });

@@ -75,11 +75,14 @@ export async function renderWork(root, opts = {}) {
 
   /* 일정 */
   async function editEv(ev) {
-    const t = input(ev?.title, "제목 (예: ○○유통 미팅)"), d = input(ev?.ev_date ?? today, "", "date"), tm = input(ev?.ev_time, "시간 (예: 14:00)"), pl = input(ev?.place, "장소·거래처"), nt = area(ev?.note, "메모", 2);
+    const t = input(ev?.title, "제목 (예: ○○유통 미팅)"), d = input(ev?.ev_date ?? today, "", "date"), ed = input(ev?.end_date ?? "", "", "date"), tm = input(ev?.ev_time, "시간 (예: 14:00)"), pl = input(ev?.place, "장소·거래처"), nt = area(ev?.note, "메모", 2);
+    // 시작일을 바꿨는데 종료일이 그보다 빠르면 종료일을 비운다(기간 일정이 아니면 비워 둔다)
+    d.onchange = () => { if (ed.value && ed.value < d.value) ed.value = ""; };
     for (;;) {
-      if (!(await modal(ev ? "일정 수정" : "일정 추가", h("div", null, field("제목", t), field("날짜", d), field("시간", tm), field("장소·거래처", pl), field("메모", nt)), "저장", "취소"))) return;
-      if (!t.value.trim() || !d.value) { toast("제목과 날짜를 넣어 주세요"); continue; }
-      if (await save("work_events", { ...(ev ? { id: ev.id } : {}), title: t.value.trim(), ev_date: d.value, ev_time: tm.value.trim(), place: pl.value.trim(), note: nt.value.trim() })) return;
+      if (!(await modal(ev ? "일정 수정" : "일정 추가", h("div", null, field("제목", t), field("시작일", d), field("종료일 (며칠에 걸친 일정이면 선택, 하루면 비워 두세요)", ed), field("시간", tm), field("장소·거래처", pl), field("메모", nt)), "저장", "취소"))) return;
+      if (!t.value.trim() || !d.value) { toast("제목과 시작일을 넣어 주세요"); continue; }
+      if (ed.value && ed.value < d.value) { toast("종료일은 시작일보다 빠를 수 없어요"); continue; }
+      if (await save("work_events", { ...(ev ? { id: ev.id } : {}), title: t.value.trim(), ev_date: d.value, end_date: ed.value && ed.value !== d.value ? ed.value : null, ev_time: tm.value.trim(), place: pl.value.trim(), note: nt.value.trim() })) return;
     }
   }
   async function finishEv(ev) {
@@ -89,7 +92,7 @@ export async function renderWork(root, opts = {}) {
   }
   const evCard = (r) => h("div", { class: "card", style: "margin:8px 0;padding:12px;border:1px solid #ddd;border-radius:12px" + (r.done ? ";opacity:.75" : "") },
     h("div", { style: "display:flex;justify-content:space-between;gap:8px" },
-      h("b", null, `${labelMD(r.ev_date)}${r.ev_time ? " " + r.ev_time : ""} · ${r.title}`), h("span", { class: "muted" }, sn(r) + r.author_name)),
+      h("b", null, `${labelMD(r.ev_date)}${r.end_date && r.end_date !== r.ev_date ? " ~ " + labelMD(r.end_date) : ""}${r.ev_time ? " " + r.ev_time : ""} · ${r.title}`), h("span", { class: "muted" }, sn(r) + r.author_name)),
     r.place && h("div", { class: "muted" }, "📍 " + r.place),
     r.note && h("div", { style: "white-space:pre-wrap" }, r.note),
     r.done && h("div", { class: "ok-text", style: "white-space:pre-wrap" }, "✔ " + (r.result || "완료")),
@@ -98,8 +101,9 @@ export async function renderWork(root, opts = {}) {
       h("button", { class: "linkbtn", onclick: () => editEv(r) }, "수정"), h("button", { class: "linkbtn", onclick: () => remove("work_events", r, r.title) }, "삭제")));
   const evView = () => {
     const all = vis(data.work_events);
-    const up = all.filter((r) => !r.done && r.ev_date >= today).sort((a, b) => (a.ev_date + a.ev_time).localeCompare(b.ev_date + b.ev_time));
-    const late = all.filter((r) => !r.done && r.ev_date < today).sort((a, b) => a.ev_date.localeCompare(b.ev_date));
+    const endOf = (r) => r.end_date || r.ev_date; // 기간 일정은 종료일까지는 "예정"(진행 중)
+    const up = all.filter((r) => !r.done && endOf(r) >= today).sort((a, b) => (a.ev_date + a.ev_time).localeCompare(b.ev_date + b.ev_time));
+    const late = all.filter((r) => !r.done && endOf(r) < today).sort((a, b) => a.ev_date.localeCompare(b.ev_date));
     const past = all.filter((r) => r.done).sort((a, b) => b.ev_date.localeCompare(a.ev_date)).slice(0, 40);
     const sec = (t, l, cls = "") => l.length > 0 && h("div", null, h("div", { class: "cat-title " + cls }, t), l.map(evCard));
     return [!RO && h("button", { class: "btn primary", onclick: () => editEv() }, "＋ 일정 추가"),

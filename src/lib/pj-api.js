@@ -5,6 +5,8 @@ import { checkFile, isImage, resizeImage, signedUrls } from "./img.js";
 
 const BUCKET = "projects";
 const NOT_READY = "프로젝트 기능이 아직 준비되지 않았어요 (projects.sql 실행이 필요해요)";
+// 알림·글별 읽음 기능(projects-2.sql, project-notify 함수)만 빠졌을 때의 안내
+const NOT_READY_2 = "알림 기능이 아직 준비되지 않았어요 (projects-2.sql 실행이 필요해요)";
 const NO_PERM = "권한이 없어요";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -29,8 +31,8 @@ function kerr(msg, extra) {
   return Object.assign(new Error(msg), { pjKorean: true }, extra);
 }
 
-// Supabase 오류(Postgrest·Storage)·네트워크 오류 → 한국어 Error
-function mapErr(e, fallback = "처리하지 못했어요") {
+// Supabase 오류(Postgrest·Storage)·네트워크 오류 → 한국어 Error. notReady: 표·함수가 없을 때 보여 줄 안내문
+function mapErr(e, fallback = "처리하지 못했어요", notReady = NOT_READY) {
   if (e && e.pjKorean) return e;
   const code = String(e?.code ?? "");
   const status = String(e?.status ?? e?.statusCode ?? "");
@@ -38,7 +40,7 @@ function mapErr(e, fallback = "처리하지 못했어요") {
   let msg;
   if (/[가-힣]/.test(raw)) msg = raw; // 서버 함수가 한국어로 준 안내문(예: 고정은 5개까지)은 그대로
   else if (code === "42P01" || code === "42883" || code === "PGRST202" || code === "PGRST205" || status === "404"
-    || /could not find the (table|function)|relation .* does not exist|function .* does not exist|bucket not found/i.test(raw)) msg = NOT_READY;
+    || /could not find the (table|function)|relation .* does not exist|function .* does not exist|bucket not found/i.test(raw)) msg = notReady;
   else if (code === "42501" || status === "403" || /permission denied|row-level security|not authorized|unauthorized|forbidden/i.test(raw)) msg = NO_PERM;
   else if (status === "401" || /jwt expired|invalid jwt/i.test(raw)) msg = "로그인이 만료됐어요. 다시 로그인해 주세요";
   else if (/failed to fetch|networkerror|load failed|network request failed/i.test(raw)) msg = "인터넷 연결을 확인하고 다시 시도해 주세요";
@@ -51,6 +53,11 @@ const cleanQ = (q) => String(q ?? "").replace(/[,()%*_"\\]/g, "").replace(/\s+/g
 
 const extOf = (name) => (String(name ?? "").match(/\.([A-Za-z0-9]{1,8})$/)?.[1] ?? "").toLowerCase();
 const clampLimit = (n, def) => Math.min(Math.max(parseInt(n, 10) || def, 1), 100);
+// 배열을 n개씩 나눈다(주소가 너무 길어지지 않게 id 모음을 쪼갤 때)
+const chunk = (arr, n) => { const out = []; for (let i = 0; i < arr.length; i += n) out.push(arr.slice(i, i + n)); return out; };
+const validIds = (list) => [...new Set((list ?? []).filter((x) => typeof x === "string" && UUID_RE.test(x)))];
+// 서버 시각 문자열 → 밀리초(해석 못 하면 NaN)
+const ms = (t) => Date.parse(t);
 
 // 제목+본문의 #태그 → 소문자, 중복 없이 최대 10개, 각 20자 이하. 주소 안의 #(앞이 / 등)와 숫자만 있는 것은 제외
 function extractTags(text) {
@@ -190,19 +197,37 @@ export function makePj({ sb, me }) {
     const uid = await myId();
     const { error } = await (await sb()).from("pj_members").insert({ project_id: pid, user_id: uid, role: "member" });
     if (error && error.code !== "23505") throw error; // 이미 참여 중이면 성공으로 본다
+    baseCache.delete(pid);
   }
 
   async function leave(pid) {
     const uid = await myId();
     const { error } = await (await sb()).from("pj_members").delete().eq("project_id", pid).eq("user_id", uid);
     if (error) throw error;
+    baseCache.delete(pid);
   }
 
+  // 내 참여 정보(role·last_read_at·muted). 가져올 때마다 기준 시각 캐시도 새로 채운다
   async function myMembership(pid) {
     const uid = await myId();
     const { data, error } = await (await sb()).from("pj_members").select("role,last_read_at,muted").eq("project_id", pid).eq("user_id", uid).maybeSingle();
     if (error) throw error;
+    baseCache.set(pid, { t: Date.now(), m: data ?? null });
     return data ?? null;
+  }
+
+  // 글 목록의 '읽음' 판단에 쓰는 내 참여 정보. 1분 캐시(모두 읽음·참여·나가기·알림 설정 때 갱신) — 목록을 넘길 때마다 다시 묻지 않으려고
+  const baseCache = new Map(), basePending = new Map();
+  function baseline(pid) {
+    const hit = baseCache.get(pid);
+    if (hit && Date.now() - hit.t < 60000) return Promise.resolve(hit.m);
+    // 글 목록과 고정 글이 동시에 물어도 한 번만 가져온다
+    let p = basePending.get(pid);
+    if (!p) {
+      p = myMembership(pid).finally(() => basePending.delete(pid));
+      basePending.set(pid, p);
+    }
+    return p;
   }
 
   async function members(pid) {
@@ -248,11 +273,15 @@ export function makePj({ sb, me }) {
     const byPost = new Map();
     const ids = rows.map((r) => r.id);
     if (ids.length) {
-      const { data, error } = await (await sb()).from("pj_files").select("*").in("post_id", ids).order("created_at", { ascending: true });
-      if (error) throw error;
-      for (const f of data ?? []) {
-        if (!byPost.has(f.post_id)) byPost.set(f.post_id, []);
-        byPost.get(f.post_id).push(f);
+      // 안 읽은 글 보기는 200개까지 올 수 있어서 100개씩 나눠 한꺼번에 묻는다(주소 길이 제한)
+      const c = await sb();
+      const res = await Promise.all(chunk(ids, 100).map((part) => c.from("pj_files").select("*").in("post_id", part).order("created_at", { ascending: true })));
+      for (const { data, error } of res) {
+        if (error) throw error;
+        for (const f of data ?? []) {
+          if (!byPost.has(f.post_id)) byPost.set(f.post_id, []);
+          byPost.get(f.post_id).push(f);
+        }
       }
     }
     return rows.map((r) => {
@@ -262,26 +291,88 @@ export function makePj({ sb, me }) {
     });
   }
 
-  // before: 직전 목록 마지막 글의 created_at. limit+1 개를 받아 hasMore 를 가린다
-  async function posts(pid, { before, limit = 20, q, tag, mine } = {}) {
+  // 글마다 '내가 읽었나'(id → boolean). 읽음 = 내가 쓴 글 / 참여 기준 시각(last_read_at) 이전 글 / 내 읽음 기록이 있는 글.
+  // 참여자가 아니면(대표·부대표) 읽음 기록을 남길 수 없으니 전부 읽은 것으로 본다(목록 새 글 수 0과 맞춤).
+  // 기준 시각은 캐시를 쓰고, 읽음 기록은 확인이 필요한 글(남이 쓴 기준 이후 글)만 한 번에 묻는다
+  async function readFlags(pid, rows) {
+    const flags = new Map();
+    if (!rows.length) return flags;
+    const uid = await myId();
+    const m = await baseline(pid);
+    if (!m) {
+      for (const r of rows) flags.set(r.id, true);
+      return flags;
+    }
+    const base = ms(m.last_read_at);
+    const check = [];
+    for (const r of rows) {
+      if (r.author_id === uid || ms(r.created_at) <= base) flags.set(r.id, true);
+      else check.push(r.id);
+    }
+    const seen = new Set();
+    if (check.length) {
+      try {
+        const c = await sb();
+        const res = await Promise.all(chunk(check, 100).map((part) => c.from("pj_post_reads").select("post_id").eq("user_id", uid).in("post_id", part)));
+        for (const { data, error } of res) {
+          if (error) throw error;
+          for (const x of data ?? []) seen.add(x.post_id);
+        }
+      } catch { /* 읽음 기록을 못 가져와도 글은 보여 준다(새 글 표시만 덜 정확해진다) */ }
+    }
+    for (const id of check) flags.set(id, seen.has(id));
+    return flags;
+  }
+
+  // 글 행들에 댓글 수·첨부(hydrate)와 read_by_me 를 붙인다. 서로 기다릴 필요가 없어 같이 묻는다
+  async function decorate(pid, rows) {
+    const [full, flags] = await Promise.all([hydrate(rows), readFlags(pid, rows)]);
+    return full.map((r) => ({ ...r, read_by_me: flags.get(r.id) !== false }));
+  }
+
+  // before: 직전 목록 마지막 글의 created_at. limit+1 개를 받아 hasMore 를 가린다.
+  // unreadOnly: 내가 안 읽은 글만(서버가 가려 준 id 로 가져오며, 최대 200개를 한 번에 주므로 hasMore 는 false)
+  async function posts(pid, { before, limit = 20, q, tag, mine, unreadOnly } = {}) {
     const lim = clampLimit(limit, 20);
-    let qb = (await sb()).from("pj_posts").select("*, pj_comments(count)").eq("project_id", pid);
-    if (before) qb = qb.lt("created_at", before);
+    const c = await sb();
     const key = cleanQ(q);
-    if (key) qb = qb.or(`title.ilike.%${key}%,body.ilike.%${key}%`);
-    if (tag) qb = qb.contains("tags", [String(tag).trim()]);
-    if (mine) qb = qb.eq("author_id", await myId());
+    const uid = mine ? await myId() : null;
+    const base = () => {
+      let qb = c.from("pj_posts").select("*, pj_comments(count)").eq("project_id", pid);
+      if (key) qb = qb.or(`title.ilike.%${key}%,body.ilike.%${key}%`);
+      if (tag) qb = qb.contains("tags", [String(tag).trim()]);
+      if (uid) qb = qb.eq("author_id", uid);
+      return qb;
+    };
+    if (unreadOnly) {
+      const { data: raw, error: e1 } = await c.rpc("pj_unread_post_ids", { pid });
+      if (e1) throw mapErr(e1, "안 읽은 글을 불러오지 못했어요", NOT_READY_2);
+      // setof uuid 는 문자열 배열로 오지만, 값이 객체로 감싸져 와도 읽도록 한다
+      const ids = validIds((Array.isArray(raw) ? raw : []).map((x) => (x && typeof x === "object" ? Object.values(x)[0] : x))).slice(0, 200);
+      if (!ids.length) return { rows: [], hasMore: false };
+      const res = await Promise.all(chunk(ids, 100).map((part) => base().in("id", part)));
+      let all = [];
+      for (const { data, error } of res) {
+        if (error) throw error;
+        all = all.concat(data ?? []);
+      }
+      all.sort((a, b) => ms(b.created_at) - ms(a.created_at));
+      // 서버가 '안 읽은 글'로 가려 준 것이라 읽음 기록을 다시 묻지 않고 read_by_me 는 모두 false
+      return { rows: (await hydrate(all)).map((r) => ({ ...r, read_by_me: false })), hasMore: false };
+    }
+    let qb = base();
+    if (before) qb = qb.lt("created_at", before);
     const { data, error } = await qb.order("created_at", { ascending: false }).limit(lim + 1);
     if (error) throw error;
     const all = data ?? [];
-    return { rows: await hydrate(all.slice(0, lim)), hasMore: all.length > lim };
+    return { rows: await decorate(pid, all.slice(0, lim)), hasMore: all.length > lim };
   }
 
   async function pinnedPosts(pid) {
     const { data, error } = await (await sb()).from("pj_posts").select("*, pj_comments(count)").eq("project_id", pid).eq("pinned", true)
       .order("pinned_at", { ascending: false, nullsFirst: false }).order("created_at", { ascending: false }).limit(5);
     if (error) throw error;
-    return hydrate(data ?? []);
+    return decorate(pid, data ?? []);
   }
 
   async function tags(pid) {
@@ -456,15 +547,108 @@ export function makePj({ sb, me }) {
     return signedUrls(await sb(), list, { fresh: opts === true || !!(opts && opts.fresh) });
   }
 
+  // 프로젝트를 열 때는 더 이상 부르지 않는다(참여 기준 시각을 지금으로 옮겨 전부 읽음 처리해 버림). '모두 읽음'은 markAllRead 를 쓴다
   async function markRead(pid) {
     const { error } = await (await sb()).rpc("pj_mark_read", { pid });
     if (error) throw error;
   }
 
-  // 모든 공개 메서드는 실패를 한국어 Error 로 바꿔서 던진다
-  const wrap = (fb, fn) => async (...a) => {
-    try { return await fn(...a); } catch (e) { throw mapErr(e, fb); }
+  /* ---------- 글별 읽음 · 알림 (supabase/projects-2.sql, functions/project-notify) ---------- */
+  // 화면에 보인 글을 읽음으로 기록한다. 100개씩 나눠 보내고, 내 글·다른 프로젝트 글은 서버가 건너뛴다
+  async function markPostsRead(pid, ids) {
+    const list = validIds(ids);
+    if (!list.length) return;
+    const c = await sb();
+    for (const part of chunk(list, 100)) {
+      const { error } = await c.rpc("pj_mark_posts_read", { pid, post_ids: part });
+      if (error) throw error;
+    }
+  }
+
+  // 참여 기준 시각을 지금으로 옮긴다(이전 글은 모두 읽은 것으로). 기록된 글별 읽음은 건드리지 않는다
+  async function markAllRead(pid) {
+    const { error } = await (await sb()).rpc("pj_mark_all_read", { pid });
+    baseCache.delete(pid);
+    if (error) throw error;
+  }
+
+  // 최근 300개 글의 미확인 수. Map(글 id → { unread, total }) — 숫자만 오고 이름은 없다
+  async function unreadCounts(pid) {
+    const { data, error } = await (await sb()).rpc("pj_unread_counts", { pid });
+    if (error) throw error;
+    const out = new Map();
+    for (const r of data ?? []) out.set(r.post_id, { unread: Number(r.unread) || 0, total: Number(r.total) || 0 });
+    return out;
+  }
+
+  // 글쓴이·프로젝트 관리자(대표·부대표 포함)만 받는다. 남이 부르면 서버가 빈 목록을 준다
+  async function unreadPeople(postId) {
+    const { data, error } = await (await sb()).rpc("pj_unread_people", { post_id: postId });
+    if (error) throw error;
+    return (data ?? []).map((r) => ({ user_id: r.user_id, user_name: r.user_name ?? "", job_title: r.job_title ?? "", has_read: !!r.has_read }));
+  }
+
+  // 알림 서버(project-notify) 호출. 받는 사람 명단은 보내지 않고 서버가 직접 정한다.
+  // 실패하면 서버가 준 한국어 안내와 code(auth·forbidden·not_found·bad_input·wait·server)를 담은 Error 를 던진다.
+  // code 'wait' 이면 err.retry_after(초, 없을 수 있음)도 붙는다
+  async function callNotify(action, postId) {
+    if (typeof postId !== "string" || !UUID_RE.test(postId)) throw kerr("글 정보가 맞지 않아요", { code: "bad_input" });
+    const { data, error } = await (await sb()).functions.invoke("project-notify", { body: { action, post_id: postId } });
+    if (error) {
+      let msg = "알림 서버에 연결하지 못했어요", code = "network", retry;
+      const res = error.context;
+      if (res && typeof res.json === "function") {
+        let j = null;
+        try { j = await res.json(); } catch { j = null; }
+        const wait = Number(j?.retry_after);
+        if (Number.isFinite(wait) && wait > 0) retry = Math.ceil(wait);
+        if (j && typeof j.error === "string" && j.error) { msg = j.error; code = j.code ?? "error"; }
+        else if (res.status === 404) { msg = "알림 기능이 아직 준비되지 않았어요 (project-notify 배포가 필요해요)"; code = "not_ready"; }
+        else if (res.status === 401) { msg = "로그인이 만료됐어요. 다시 로그인해 주세요"; code = "auth"; }
+        else { msg = "알림 서버에서 문제가 생겼어요"; code = "server"; }
+      }
+      throw kerr(msg, { code, retry_after: retry });
+    }
+    if (data?.error) throw kerr(String(data.error), { code: data.code ?? "error", retry_after: Number(data.retry_after) || undefined });
+    return data ?? {};
+  }
+
+  // 새 글 알림 보내기(글쓴이 본인만, 올린 뒤 10분 안). 결과 { sent, limited, already } — limited: 한도 초과, already: 이미 보냄
+  async function notifyPost(postId) {
+    const d = await callNotify("post", postId);
+    return { sent: Number(d.sent) || 0, limited: !!d.limited, already: !!d.already };
+  }
+
+  // 아직 안 읽은 사람에게 다시 알림(같은 글은 6시간에 한 번). 너무 빠르면 code 'wait' 로 던진다
+  async function nudge(postId) {
+    const d = await callNotify("nudge", postId);
+    return { sent: Number(d.sent) || 0, recipients: Number(d.recipients) || 0 }; // recipients: 알림 대상 수(알림을 켠 사람만 sent 에 잡힌다)
+  }
+
+  // 이 프로젝트 알림 끄기/켜기(내 참여 행의 muted 칸). 바뀐 값을 돌려준다
+  async function setMuted(pid, muted) {
+    const uid = await myId();
+    const { data, error } = await (await sb()).from("pj_members").update({ muted: !!muted }).eq("project_id", pid).eq("user_id", uid).select("muted");
+    if (error) throw error;
+    if (!data?.length) throw kerr("이 프로젝트에 참여한 사람만 알림을 바꿀 수 있어요");
+    const hit = baseCache.get(pid);
+    if (hit?.m) hit.m = { ...hit.m, muted: !!data[0].muted };
+    return !!data[0].muted;
+  }
+
+  // 보관함 사용량(대표·부대표만, 그 밖에는 null). { bytes, files, projects }
+  async function usage() {
+    const { data, error } = await (await sb()).rpc("pj_usage");
+    if (error) throw error;
+    if (!data || typeof data !== "object") return null;
+    return { bytes: Number(data.bytes) || 0, files: Number(data.files) || 0, projects: Number(data.projects) || 0 };
+  }
+
+  // 모든 공개 메서드는 실패를 한국어 Error 로 바꿔서 던진다. notReady: 표·함수가 없을 때의 안내문(기본은 projects.sql)
+  const wrap = (fb, fn, notReady) => async (...a) => {
+    try { return await fn(...a); } catch (e) { throw mapErr(e, fb, notReady); }
   };
+  const wrap2 = (fb, fn) => wrap(fb, fn, NOT_READY_2);
 
   return {
     profile: wrap("내 정보를 불러오지 못했어요", profile),
@@ -494,5 +678,13 @@ export function makePj({ sb, me }) {
     deleteFile: wrap("파일을 지우지 못했어요", deleteFile),
     urls: wrap("사진 주소를 받지 못했어요", urls),
     markRead: wrap("읽음 표시를 하지 못했어요", markRead),
+    markPostsRead: wrap2("읽음 표시를 하지 못했어요", markPostsRead),
+    markAllRead: wrap2("모두 읽음 표시를 하지 못했어요", markAllRead),
+    unreadCounts: wrap2("미확인 수를 불러오지 못했어요", unreadCounts),
+    unreadPeople: wrap2("미확인자를 불러오지 못했어요", unreadPeople),
+    notifyPost: wrap2("알림을 보내지 못했어요", notifyPost),
+    nudge: wrap2("알림을 보내지 못했어요", nudge),
+    setMuted: wrap2("알림 설정을 바꾸지 못했어요", setMuted),
+    usage: wrap2("저장 공간을 불러오지 못했어요", usage),
   };
 }

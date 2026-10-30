@@ -1,4 +1,4 @@
-﻿const CACHE = "wooahan-v36";
+﻿const CACHE = "wooahan-v38";
 const SHELL = [
   "./", "index.html", "manifest.webmanifest", "src/styles.css", "src/main.js", "src/config.js",
   "src/lib/api.js", "src/lib/ui.js", "src/lib/kst.js", "src/lib/report.js",
@@ -36,8 +36,10 @@ self.addEventListener("push", (e) => {
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   const url = new URL(e.notification.data?.url || "./", self.registration.scope).href;
+  // 앱이 여러 개(/, /ceo/, /ck/, /fnb/)라서, 알림이 가리키는 앱과 같은 앱 창만 재사용한다(없으면 새로 연다)
+  const appOf = (u) => { try { const m = new URL(u).pathname.match(/^\/(ceo|ck|fnb)\//); return m ? m[1] : ""; } catch { return null; } };
   e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((cs) => {
-    for (const c of cs) if ("focus" in c) { c.navigate(url); return c.focus(); }
+    for (const c of cs) if ("focus" in c && appOf(c.url) === appOf(url)) { c.navigate(url); return c.focus(); }
     return self.clients.openWindow(url);
   }));
 });

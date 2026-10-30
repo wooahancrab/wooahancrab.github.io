@@ -17,6 +17,27 @@ const safeColor = (c) => (/^#[0-9a-fA-F]{6}$/.test(String(c ?? "")) ? String(c) 
 const msgOf = (e) => String((e && e.message) || "").trim() || "처리하지 못했어요";
 const fmtDay = (iso) => { try { return labelMD(dateOf(iso)); } catch { return ""; } };
 const timeOf = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ? t : 0; };
+// 저장 공간 표시용: 바이트 → MB (10 MB 미만은 소수 한 자리)
+const fmtMB = (bytes) => {
+  const mb = bytes / 1048576;
+  return mb.toLocaleString("ko-KR", { maximumFractionDigits: mb < 10 ? 1 : 0 });
+};
+
+// 알림은 카카오톡·네이버 같은 앱 안의 브라우저에서는 켤 수 없다
+const IN_APP_RE = /KAKAOTALK|NAVER\(inapp|Instagram|FB_IAB|FBAN|FBAV|DaumApps|\bLine\//i;
+const inAppBrowser = () => { try { return IN_APP_RE.test(navigator.userAgent || ""); } catch { return false; } };
+const IN_APP_HINT = "카카오톡·네이버 같은 앱 안의 화면에서는 알림을 켤 수 없어요. 오른쪽 위 메뉴에서 [다른 브라우저로 열기]를 눌러 Chrome(안드로이드)이나 Safari(아이폰)에서 열어 주세요";
+// api.enablePush() 의 오류를 알아보기 쉬운 안내로 바꾼다
+function pushErrText(e) {
+  const m = msgOf(e);
+  if (/허용되지 않/.test(m)) return "알림이 막혀 있어요. 주소창 옆 자물쇠(또는 설정)에서 알림을 [허용]으로 바꾼 뒤 다시 눌러 주세요";
+  if (/지원하지 않/.test(m)) {
+    return inAppBrowser() ? IN_APP_HINT
+      : "이 브라우저에서는 알림을 켤 수 없어요. Chrome(안드로이드)이나 Safari(아이폰)에서 열어 주세요. 아이폰은 Safari의 [공유 → 홈 화면에 추가]로 설치한 앱에서만 알림이 와요";
+  }
+  if (/VAPID/i.test(m)) return "알림 설정이 아직 끝나지 않았어요. 담당자에게 알려 주세요";
+  return /[가-힣]/.test(m) ? m : `알림을 켜지 못했어요 (${m.slice(0, 80)})`;
+}
 
 // 칸을 비우고 새로 채운다. h() 와 같이 null·false 는 건너뛰고, 배열은 펼친다(replaceChildren 은 false 를 "false" 글자로 넣어서 쓰지 않음)
 function put(el, ...kids) {
@@ -27,6 +48,9 @@ function put(el, ...kids) {
   }
   return el;
 }
+
+// 탭이 맡긴 '떠날 때 할 일'을 실행한다. 던지지 않고, 끝나면(실패해도) 풀리는 약속을 돌려준다
+const callSafe = (fn) => { try { return Promise.resolve(fn()).catch(() => {}); } catch { return Promise.resolve(); } };
 
 /* ---------------- 스타일 (이 파일 전용, 한 번만) ---------------- */
 const CSS = `
@@ -86,6 +110,12 @@ const CSS = `
 .pj-pick-row.off,.pj-pick-group.off{display:none}
 .pj-danger{margin-top:6px;padding-top:8px;border-top:1px solid var(--line)}
 .pj-danger .btn{margin:6px 0 0}
+.pj-push{margin:0 0 6px}
+.pj-push .err{margin:6px 2px 0;font-size:.85rem;line-height:1.5}
+.pj-usage{margin:0 2px 4px;font-size:.8rem}
+.pj-push:empty,.pj-usage:empty{display:none}
+.pj-bell-row{margin-top:8px}
+.pj-mini.off{background:#f6f1ec;color:var(--muted)}
 `;
 
 function ensureStyle() {
@@ -446,6 +476,9 @@ export async function renderProjects(root, opts = {}) {
   let backing = false;                // 목록으로 돌아가는 중(뒤로가기 처리 대기)
   let listY = 0;                     // 목록 스크롤 위치(프로젝트에서 돌아올 때 복원)
   let pj = null, prof = null, isTop = false;
+  let pushHint = "";                  // [알림 켜기] 가 실패했을 때 목록 위에 남겨 두는 안내
+  let usageText = "", usageAt = 0, usageBusy = false; // 저장 공간 줄(대표·부대표만)
+  let watchTimer = 0;                 // 화면이 떨어졌는지 1초마다 살피는 타이머(메인 탭 전환 등은 알려 주는 곳이 없다)
 
   // 화면이 아직 살아 있나. 한 번 붙은 뒤 떨어졌으면(다른 탭으로 갔거나 다시 그려짐) 끝난 것으로 보고 리스너를 거둔다
   function alive() {
@@ -455,8 +488,15 @@ export async function renderProjects(root, opts = {}) {
     return true; // 아직 붙기 전(부른 쪽이 나중에 붙이는 경우)
   }
   function teardown() {
+    clearInterval(watchTimer);
     document.removeEventListener("visibilitychange", onVis);
     window.removeEventListener("popstate", onPop);
+    runLeave(cur); // 화면째 떨어질 때도 열려 있던 탭의 마무리(읽음 전송)를 시킨다
+  }
+  // 프로젝트 탭이 ctx.onLeave 로 맡긴(또는 render 함수가 돌려준) 마무리를 한 번씩 실행하고 비운다
+  function runLeave(session) {
+    const hooks = session && session.leaveHooks ? session.leaveHooks.splice(0) : [];
+    return Promise.all(hooks.map(callSafe));
   }
   function onVis() {
     if (!alive()) return;
@@ -514,6 +554,7 @@ export async function renderProjects(root, opts = {}) {
   isTop = prof.role === "owner" || prof.role === "deputy";
   document.addEventListener("visibilitychange", onVis);
   window.addEventListener("popstate", onPop);
+  watchTimer = setInterval(alive, 1000);
 
   /* ----- 목록 ----- */
   const joinedActive = (r) => !!r.my_role && r.status === "active";
@@ -531,18 +572,79 @@ export async function renderProjects(root, opts = {}) {
     search.addEventListener("input", () => { q = search.value; drawGrid(); });
     const chipsBox = h("div", { class: "pj-chips" });
     const gridBox = h("div");
-    shell = { chipsBox, gridBox };
+    const pushBox = h("div", { class: "pj-push" });
+    const usageBox = h("div", { class: "muted pj-usage" });
+    shell = { chipsBox, gridBox, pushBox, usageBox };
     root.replaceChildren(h("div", { class: "page" },
       outerBack(),
       h("div", { class: "pj-top" },
         h("h1", null, "📋 프로젝트"),
-        h("button", { type: "button", class: "pj-mini", onclick: () => loadList({ manual: true }) }, "↻ 새로고침")),
+        h("button", { type: "button", class: "pj-mini", onclick: () => { usageAt = 0; loadUsage(); loadList({ manual: true }); } }, "↻ 새로고침")),
+      usageBox,
+      pushBox,
       search,
       chipsBox,
       h("button", { type: "button", class: "btn primary", onclick: () => newProject() }, "+ 새 프로젝트"),
       gridBox));
+    drawPushBox();
+    drawUsage();
     drawChips();
     drawGrid();
+  }
+
+  // 이 기기에서 알림이 꺼져 있을 때만 [알림 켜기] 를 보인다
+  function drawPushBox() {
+    if (!shell || !shell.pushBox) return;
+    let need = false;
+    try { need = typeof api.pushEnabled === "function" && !api.pushEnabled(); } catch { need = false; }
+    if (!need) { put(shell.pushBox); return; }
+    put(shell.pushBox,
+      h("div", { class: "pj-banner" },
+        h("span", null, "새 글 알림을 받으려면 알림을 켜 주세요"),
+        h("button", { type: "button", class: "pj-mini", onclick: (ev) => turnOnPush(ev.currentTarget) }, "🔔 알림 켜기")),
+      pushHint ? h("p", { class: "err" }, pushHint) : null);
+  }
+
+  async function turnOnPush(btn) {
+    if (inAppBrowser()) {
+      pushHint = IN_APP_HINT;
+      drawPushBox();
+      return;
+    }
+    btn.disabled = true;
+    try {
+      await api.enablePush();
+      pushHint = "";
+      toast("알림을 켰어요", 2000);
+    } catch (e) {
+      console.warn("[projects] 알림 켜기 실패:", e);
+      pushHint = pushErrText(e);
+      toast("알림을 켜지 못했어요", 2500);
+    }
+    if (alive() && view === "list") drawPushBox();
+  }
+
+  function drawUsage() {
+    if (shell && shell.usageBox) put(shell.usageBox, usageText || null);
+  }
+
+  // 대표·부대표만. 실패하거나 값이 없으면 줄을 숨긴다. 1분 안에는 다시 묻지 않는다
+  async function loadUsage() {
+    if (!isTop || typeof pj.usage !== "function" || usageBusy) return;
+    if (usageText && Date.now() - usageAt < 60000) return;
+    usageBusy = true;
+    try {
+      const u = await pj.usage();
+      const bytes = u ? Number(u.bytes) : NaN;
+      if (Number.isFinite(bytes) && bytes >= 0) {
+        usageText = `저장 공간 약 ${fmtMB(bytes)} MB 사용`;
+        usageAt = Date.now();
+      } else usageText = "";
+    } catch {
+      usageText = "";
+    }
+    usageBusy = false;
+    if (alive() && view === "list") drawUsage();
   }
 
   function drawChips() {
@@ -641,6 +743,9 @@ export async function renderProjects(root, opts = {}) {
   }
 
   function showList() {
+    const old = cur;
+    const fromMember = !!(old && old.ctx && old.ctx.myRole); // 읽은 글을 서버에 알리는 중일 수 있다
+    const left = runLeave(old); // 피드가 모아 둔 '읽음'을 지금 보내게 한다(cur 를 비우기 전에)
     cur = null;
     view = "list";
     backing = false;
@@ -648,7 +753,14 @@ export async function renderProjects(root, opts = {}) {
     drawListShell();
     scrollTo(0, listY);
     listY = 0;
-    loadList({ silent: true });
+    loadUsage();
+    if (!fromMember) { loadList({ silent: true }); return; }
+    // 읽음 전송이 끝나면(오래 걸려도 1.5초) 새 글 숫자를 받는다
+    Promise.race([left, new Promise((r) => setTimeout(r, 1500))]).then(() => {
+      if (alive() && view === "list") loadList({ silent: true });
+    });
+    // 탭이 마무리를 맡기지 않은 경우를 위한 예비: 잠시 뒤 한 번 더 새로 고쳐 새 글 숫자를 맞춘다
+    setTimeout(() => { if (alive() && view === "list") loadList({ silent: true }); }, 2200);
   }
 
   /* ----- 프로젝트 화면 ----- */
@@ -669,7 +781,7 @@ export async function renderProjects(root, opts = {}) {
     if (view === "list") listY = scrollY;
     view = "project";
     backing = false;
-    const session = { pid, tab: o.tab || "feed", postId: o.postId || null, ctx: null, lastRead: null, pane: null, head: null, tabsBox: null, body: null };
+    const session = { pid, tab: o.tab || "feed", postId: o.postId || null, ctx: null, lastRead: null, muted: false, muteBusy: false, leaveHooks: [], pane: null, head: null, tabsBox: null, body: null };
     cur = session;
     pushHist();
     scrollTo(0, 0);
@@ -689,11 +801,11 @@ export async function renderProjects(root, opts = {}) {
       row = await fetchProject(session.pid);
       if (!mine(session)) return;
       if (row.my_role) {
-        // markRead 보다 먼저 읽어서 "이전에 읽은 시각"을 기억해 둔다(NEW 표시 기준)
+        // 열었다고 모두 읽음 처리하지 않는다(글별 읽음은 피드가 보이는 글만 표시). last_read_at 은 기준 시각일 뿐
         const mem = await pj.myMembership(session.pid);
         if (!mine(session)) return;
         session.lastRead = (mem && mem.last_read_at) || null;
-        pj.markRead(session.pid).catch(() => {});
+        session.muted = !!(mem && mem.muted);
       }
     } catch (e) {
       if (!mine(session)) return;
@@ -719,6 +831,12 @@ export async function renderProjects(root, opts = {}) {
         goFiles: () => switchTab(session, "files"),
         goFeed: () => switchTab(session, "feed"),
         goTab: (k) => switchTab(session, k),
+        // 탭이 화면을 떠날 때(탭 전환·목록으로·화면 닫힘) 한 번 실행할 마무리를 맡긴다(예: 모아 둔 읽음 전송). 이미 떠났으면 바로 실행
+        onLeave: (fn) => {
+          if (typeof fn !== "function") return;
+          if (mine(session)) session.leaveHooks.push(fn);
+          else callSafe(fn);
+        },
         // 파일 탭의 '글로 이동': 피드로 옮기며 ctx.postId 로 그 글을 찾아 달라고 알린다(switchTab 은 postId 를 지우므로 쓰지 않음)
         goPost: (postId) => {
           if (!mine(session) || !postId) return;
@@ -736,7 +854,8 @@ export async function renderProjects(root, opts = {}) {
     ctx.myRole = myRole;
     ctx.canWrite = !!myRole && row.status === "active";
     ctx.canAdmin = myRole === "admin" || isTop;
-    ctx.lastRead = myRole ? session.lastRead : null;
+    ctx.lastRead = myRole ? session.lastRead : null; // 예전 호환용(NEW 표시는 이제 글별 읽음으로 판단)
+    ctx.muted = myRole ? !!session.muted : false;
     return ctx;
   }
 
@@ -788,6 +907,14 @@ export async function renderProjects(root, opts = {}) {
     if (p.status === "archived") {
       banners.push(h("div", { class: "pj-banner" }, h("span", null, "보관된 프로젝트예요. 읽기만 할 수 있고 새 글·댓글·파일은 올릴 수 없어요.")));
     }
+    // 참여자만, 알림이 가는 진행 중 프로젝트에서만
+    const bell = ctx.myRole && p.status === "active"
+      ? h("div", { class: "pj-bell-row" },
+        h("button", {
+          type: "button", class: "pj-mini" + (session.muted ? " off" : ""), disabled: !!session.muteBusy,
+          onclick: (ev) => toggleMute(session, ev.currentTarget),
+        }, session.muted ? "🔕 이 프로젝트 알림 켜기" : "🔔 이 프로젝트 알림 끄기"))
+      : null;
     put(session.head,
       h("div", { class: "pj-head-row" },
         h("button", { type: "button", class: "pj-mini", onclick: () => backToList() }, "← 목록"),
@@ -799,7 +926,26 @@ export async function renderProjects(root, opts = {}) {
         h("h1", null, p.name)),
       p.descr ? descr : null,
       h("div", { class: "muted pj-meta" }, `👥 참여 ${Number(p.members) || 0}명`),
+      bell,
       banners);
+  }
+
+  // 이 프로젝트 새 글 알림 끄기/켜기(참여자 본인 설정)
+  async function toggleMute(session, btn) {
+    if (!mine(session) || session.muteBusy) return;
+    session.muteBusy = true;
+    btn.disabled = true;
+    const to = !session.muted;
+    try {
+      await pj.setMuted(session.pid, to);
+      session.muted = to;
+      if (session.ctx) session.ctx.muted = to;
+      toast(to ? "이 프로젝트 알림을 껐어요" : "이 프로젝트 알림을 켰어요", 1800);
+    } catch (e) {
+      toast(msgOf(e), 5000);
+    }
+    session.muteBusy = false;
+    if (mine(session)) drawHead(session);
   }
 
   function drawTabs(session) {
@@ -822,6 +968,7 @@ export async function renderProjects(root, opts = {}) {
   // 탭 안을 새로 그린다. 탭마다 새 칸을 만들어, 떠난 탭의 늦게 끝난 그리기가 지금 화면을 덮어쓰지 못하게 한다
   async function showTab(session) {
     if (!mine(session)) return;
+    runLeave(session); // 떠나는 탭이 맡긴 마무리(읽음 전송 등)를 칸을 바꾸기 전에 실행
     const tab = session.tab;
     const pane = h("div", { class: "pj-pane" }, h("p", { class: "muted" }, "불러오는 중…"));
     session.pane = pane;
@@ -836,8 +983,12 @@ export async function renderProjects(root, opts = {}) {
       const mod = tab === "files" ? await import("./project-files.js") : await import("./project-feed.js");
       if (!live()) return;
       pane.replaceChildren();
-      if (tab === "files") await mod.renderFiles(pane, session.ctx);
-      else await mod.renderFeed(pane, session.ctx);
+      // 탭이 정리 함수를 돌려주면 떠날 때 실행한다(ctx.onLeave 로 이미 맡겼다면 필요 없음)
+      const off = tab === "files" ? await mod.renderFiles(pane, session.ctx) : await mod.renderFeed(pane, session.ctx);
+      if (typeof off === "function") {
+        if (live()) session.leaveHooks.push(off);
+        else callSafe(off);
+      }
     } catch (e) {
       if (!live()) return;
       console.error("[projects] 탭을 그리지 못했어요:", tab, e);
@@ -856,6 +1007,7 @@ export async function renderProjects(root, opts = {}) {
       if (!mine(session)) return;
       // 방금 참여했으니 옛 글은 모두 읽은 것으로 본다(서버가 정한 시각을 기준으로)
       session.lastRead = (mem && mem.last_read_at) || new Date().toISOString();
+      session.muted = !!(mem && mem.muted);
       toast("참여했어요", 1800);
       await refreshAll(session);
     } catch (e) {
