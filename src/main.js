@@ -42,7 +42,10 @@ function shell(profile, content) {
     h("header", { class: "top" },
       h("img", { src: "/icons/logo-mark.png", class: "top-logo", alt: "" }),
       h("b", null, APP.key === "ceo" ? APP.name : profile.role === "owner" || profile.role === "deputy" ? APP.name : profile.store_display),
-      h("span", { class: "who" }, `${ROLE_LABEL[profile.role] ?? profile.role}${isDemo ? " · 데모" : ""}`),
+      // 오른쪽 위: 접속한 사람의 이름과 직책(직책을 안 적어 둔 계정은 역할 이름)
+      h("span", { class: "who", title: `${profile.display_name ?? ""} ${profile.job_title || ROLE_LABEL[profile.role] || ""}`.trim() },
+        h("span", { class: "nm" }, profile.display_name || ROLE_LABEL[profile.role] || profile.role),
+        h("span", { class: "jt" }, `${profile.job_title || ROLE_LABEL[profile.role] || profile.role}${isDemo ? " · 데모" : ""}`)),
       h("button", { class: "linkbtn", onclick: () => import("./screens/push-check.js").then((m) => m.openPushCheck()).catch((e) => toast("알림 점검을 열지 못했어요: " + e.message, 5000)) }, "알림"),
       h("button", { class: "linkbtn", onclick: async () => {
         const pw = await promptPassword("내 새 비밀번호");

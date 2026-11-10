@@ -156,10 +156,10 @@ const remote = {
     const c = await sb();
     const { data: { session } } = await c.auth.getSession();
     if (!session) return null;
-    const { data, error } = await c.from("profiles").select("role,store_id,display_name,can_settle,stores(name,kind,display_name,app_key)").eq("user_id", session.user.id).maybeSingle();
+    const { data, error } = await c.from("profiles").select("role,store_id,display_name,job_title,can_settle,stores(name,kind,display_name,app_key)").eq("user_id", session.user.id).maybeSingle();
     if (error) throw error;
     if (!data) throw new Error("계정에 역할이 아직 연결되지 않았어요 (accounts.sql 실행 필요)");
-    return { role: data.role, can_settle: !!data.can_settle, store_id: data.store_id, store_name: data.stores?.name ?? "본촌점", store_kind: data.stores?.kind ?? "restaurant", store_app_key: data.stores?.app_key ?? null, store_display: data.stores?.display_name ?? data.stores?.name ?? "본촌점", display_name: data.display_name, user_id: session.user.id };
+    return { role: data.role, job_title: String(data.job_title ?? "").trim(), can_settle: !!data.can_settle, store_id: data.store_id, store_name: data.stores?.name ?? "본촌점", store_kind: data.stores?.kind ?? "restaurant", store_app_key: data.stores?.app_key ?? null, store_display: data.stores?.display_name ?? data.stores?.name ?? "본촌점", display_name: data.display_name, user_id: session.user.id };
   },
   async signIn(email, password) {
     const c = await sb();
