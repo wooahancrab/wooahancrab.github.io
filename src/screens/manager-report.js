@@ -81,7 +81,7 @@ export async function renderManager(root, ctx) {
       h("div", { class: "datebar" }, h("b", null, labelMD(date)), h("span", null, STORE_NAME)),
       submitted && h("div", { class: "banner" }, "오늘 보고는 이미 제출됐어요. 고치고 다시 제출하면 덮어써요."),
 
-      h("section", { class: "card" }, h("h2", null, "1. 근태"),
+      h("section", { class: "sec stack" }, h("h2", { class: "sec-title" }, "1. 근태"),
         h("label", { class: "lbl" }, "결원"),
         seg([["none", "결원 없음"], ["has", "결원 있음"]], a.absent, (v) => set(() => (a.absent = v))()),
         a.absent === "has" && h("div", { class: "stack" },
@@ -101,7 +101,7 @@ export async function renderManager(root, ctx) {
             h("div", { class: "timerow" }, h("span", { class: "tlabel" }, "출근시간 :"), timeInput(l.time, (v) => (l.time = v))))),
           addBtn("+ 지각자 추가", set(() => a.lates.push(blankLate()))))),
 
-      h("section", { class: "card" }, h("h2", null, "2. 클레임·특이사항"),
+      h("section", { class: "sec stack" }, h("h2", { class: "sec-title" }, "2. 클레임·특이사항"),
         seg([["none", "없음"], ["has", "있음"]], c.state, (v) => set(() => (c.state = v))()),
         c.state === "has" && h("div", { class: "stack" },
           c.items.map((x, i) => entry(`클레임 ${i + 1}`, c.items.length > 1, set(() => c.items.splice(i, 1)),
@@ -138,7 +138,7 @@ export async function renderManager(root, ctx) {
       h("section", { class: "card sub" }, h("h3", null, "⑤ 마감 점검"),
         bigToggle("마감 점검 완료 (불·가스 끄기, 문단속)", k.closing, (v) => set(() => (k.closing = v))())),
 
-      h("section", { class: "card" }, h("h2", null, "4. 요청사항"),
+      h("section", { class: "sec stack" }, h("h2", { class: "sec-title" }, "4. 요청사항"),
         h("textarea", { class: "inp", rows: "3", placeholder: "대표님께 전달할 요청사항 (없으면 비워 두세요)", "aria-label": "요청사항", oninput: (e) => (d.request = e.target.value) }, d.request)),
 
       h("div", { class: "actions" },

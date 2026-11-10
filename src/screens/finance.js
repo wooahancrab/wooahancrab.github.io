@@ -14,7 +14,7 @@ export async function renderFinance(root) {
   const bar = h("div", { class: "page", style: "padding-bottom:0" }), body = h("div");
   const show = () => {
     api.setStore(cur); // 아래 화면의 모든 조회·업로드가 이 사업장 기준
-    const seg = (items, on, pick) => h("div", { class: "tabs" }, items.map(([k, l]) => h("button", { class: "tab" + (on === k ? " on" : ""), onclick: () => pick(k) }, l)));
+    const seg = (items, on, pick) => h("div", { class: "subtabs" }, items.map(([k, l]) => h("button", { class: "tab" + (on === k ? " on" : ""), onclick: () => pick(k) }, l)));
     bar.replaceChildren(
       seg(stores.map((s) => [s.id, s.display_name ?? s.name]), cur.id, (id) => { cur = stores.find((s) => s.id === id); show(); }),
       seg([["sales", "📊 매출·지출"], ["settle", "💰 통장·수금"]], mode, (k) => { mode = k; show(); }));

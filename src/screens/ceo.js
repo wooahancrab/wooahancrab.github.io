@@ -93,7 +93,7 @@ export async function renderCeo(root, profile) {
   // 보고판: 업무지시(진행·밀림·완료)·일일보고·건의함을 한 화면에서 훑어본다. 타일을 누르면 해당 화면으로.
   function board() {
     const tile = (icon, title, big, sub, cls, onclick) => h("button", { class: "scard", style: "flex:1;min-width:130px;text-align:left", onclick },
-      h("div", { class: "muted", style: "font-size:12px" }, icon + " " + title), h("b", { class: cls, style: "font-size:20px" }, big), h("div", { class: "muted", style: "font-size:12px" }, sub));
+      h("div", { class: "muted" }, icon + " " + title), h("b", { class: cls, style: "font-size:20px" }, big), h("div", { class: "muted" }, sub));
     const sname = (id) => SHORT[stores.find((s) => s.id === id)?.app_key] ?? "";
     const open = tk?.open ?? [], late = open.filter((t) => t.due_date && t.due_date < tk.today);
     const doneToday = (tk?.done ?? []).filter((t) => t.done_at && dateOf(t.done_at) === tk.today);
@@ -108,8 +108,8 @@ export async function renderCeo(root, profile) {
         reps.length > 0 && tile("📝", "일일보고", `${repOk} / ${reps.length} 제출`, repOk === reps.length ? "모두 제출" : "미제출 " + reps.filter((s) => !s.report.submitted).map((s) => SHORT[s.app_key] ?? s.name).join(", "), repOk < reps.length ? "err" : "ok-text", () => choose(reps.find((s) => !s.report.submitted)?.id ?? reps[0].id)),
         tile("📂", "프로젝트", pjNew ? `안 읽음 ${pjNew}` : "새 글 없음", "눌러서 보기", pjNew ? "err" : "", () => { pjOpen = true; draw(); }),
         profile.role === "owner" && tile("💌", "건의함", sgNew ? `새 건의 ${sgNew}` : "새 건의 없음", "눌러서 보기", sgNew ? "err" : "", () => { sgOpen = true; draw(); })),
-      recent.length > 0 && h("div", null, h("div", { class: "muted", style: "font-size:12px;margin:4px 0" }, "최근 업무 보고"),
-        recent.map((r) => h("div", { class: "srow", style: "align-items:flex-start" }, h("span", { class: r.cls }, r.icon + " " + r.text, h("div", { class: "muted", style: "font-size:12px" }, r.sub))))),
+      recent.length > 0 && h("div", null, h("div", { class: "sub-title" }, "최근 업무 보고"),
+        recent.map((r) => h("div", { class: "lrow", style: "align-items:flex-start" }, h("span", { class: r.cls }, r.icon + " " + r.text, h("div", { class: "muted" }, r.sub))))),
       wkBoard(sname));
   }
 
@@ -125,34 +125,37 @@ export async function renderCeo(root, profile) {
     const upcoming = events.filter((e) => endOf(e) >= today).sort((a, b) => (a.ev_date + a.ev_time).localeCompare(b.ev_date + b.ev_time)).slice(0, 6);
     const overdue = events.filter((e) => endOf(e) < today).length;
     const notes = wk.notes.slice(0, 5);
-    const head = (t, extra) => h("div", { style: "margin:12px 0 4px;display:flex;justify-content:space-between;align-items:baseline" }, h("b", null, t), extra);
-    return h("div", null,
-      head(`📝 오늘 업무 일지 (${logs.length}${people.length ? " / " + people.length : ""}명 작성)`, null),
-      logs.length ? logs.map((l) => h("details", { style: "margin:4px 0;padding:6px 10px;border:1px solid #ddd;border-radius:10px" },
-        h("summary", null, h("b", null, `${sname(l.store_id)} ${l.author_name}`), h("span", { class: "muted", style: "font-size:13px" }, "  " + (l.done || l.plan || "").split("\n")[0].slice(0, 40))),
-        l.done && h("div", { style: "white-space:pre-wrap;margin-top:4px" }, h("b", null, "한 일  "), l.done),
-        l.plan && h("div", { style: "white-space:pre-wrap;margin-top:4px" }, h("b", null, "내일  "), l.plan),
-        l.blockers && h("div", { class: "err", style: "white-space:pre-wrap;margin-top:4px" }, "막힌 점  " + l.blockers))) : h("p", { class: "muted", style: "margin:4px 0" }, "오늘 작성된 일지가 아직 없어요"),
-      missing.length > 0 && people.length > 0 && h("p", { class: "muted", style: "font-size:12px;margin:4px 0" }, "미작성: " + missing.slice(0, 12).map((p) => p.display_name).join(", ") + (missing.length > 12 ? ` 외 ${missing.length - 12}명` : "")),
-      head("📅 다가오는 일정", overdue ? h("span", { class: "err", style: "font-size:12px" }, `결과 없이 지난 일정 ${overdue}건`) : null),
-      upcoming.length ? upcoming.map((e) => h("div", { class: "srow" }, h("span", null, `${labelMD(e.ev_date)}${e.end_date && e.end_date !== e.ev_date ? "~" + labelMD(e.end_date) : ""}${e.ev_time ? " " + e.ev_time : ""} · ${e.title}`), h("span", { class: "muted" }, `${sname(e.store_id)} ${e.author_name}`))) : h("p", { class: "muted", style: "margin:4px 0" }, "예정된 일정이 없어요"),
+    // 업무 기록 구역 = 대분류(굵은 선, .sec). 안의 일지·일정·기록함 제목은 소분류(연한 밑줄, .sub-title)
+    const head = (t, extra, first) => h("div", { class: "sec-head sub-title", style: first ? "margin-top:0" : null }, h("b", null, t), extra);
+    return h("div", { class: "sec" },
+      head(`📝 오늘 업무 일지 (${logs.length}${people.length ? " / " + people.length : ""}명 작성)`, null, true),
+      logs.length ? logs.map((l) => h("details", { style: "margin:8px 0;padding:2px 12px;border:1px solid var(--line);border-radius:var(--r-md)" },
+        h("summary", { style: "padding:8px 0;cursor:pointer" }, h("b", null, `${sname(l.store_id)} ${l.author_name}`), h("span", { class: "muted" }, "  " + (l.done || l.plan || "").split("\n")[0].slice(0, 40))),
+        l.done && h("div", { style: "white-space:pre-wrap;margin:4px 0 8px" }, h("b", null, "한 일  "), l.done),
+        l.plan && h("div", { style: "white-space:pre-wrap;margin:4px 0 8px" }, h("b", null, "내일  "), l.plan),
+        l.blockers && h("div", { class: "err", style: "white-space:pre-wrap;margin:4px 0 8px" }, "막힌 점  " + l.blockers))) : h("p", { class: "muted", style: "margin:4px 0" }, "오늘 작성된 일지가 아직 없어요"),
+      missing.length > 0 && people.length > 0 && h("p", { class: "muted", style: "margin:4px 0" }, "미작성: " + missing.slice(0, 12).map((p) => p.display_name).join(", ") + (missing.length > 12 ? ` 외 ${missing.length - 12}명` : "")),
+      head("📅 다가오는 일정", overdue ? h("span", { class: "err" }, `결과 없이 지난 일정 ${overdue}건`) : null),
+      upcoming.length ? upcoming.map((e) => h("div", { class: "lrow" }, h("span", null, `${labelMD(e.ev_date)}${e.end_date && e.end_date !== e.ev_date ? "~" + labelMD(e.end_date) : ""}${e.ev_time ? " " + e.ev_time : ""} · ${e.title}`), h("span", { class: "muted" }, `${sname(e.store_id)} ${e.author_name}`))) : h("p", { class: "muted", style: "margin:4px 0" }, "예정된 일정이 없어요"),
       head("🗂 최근 기록함", null),
-      notes.length ? notes.map((n) => h("div", { class: "srow" }, h("span", null, n.title, n.tags ? h("span", { class: "muted", style: "font-size:12px" }, "  " + n.tags.split(",").map((x) => "#" + x.trim()).filter((x) => x.length > 1).join(" ")) : null), h("span", { class: "muted" }, `${sname(n.store_id)} ${n.author_name}`))) : h("p", { class: "muted", style: "margin:4px 0" }, "기록이 없어요"),
+      notes.length ? notes.map((n) => h("div", { class: "lrow" }, h("span", null, n.title, n.tags ? h("span", { class: "muted" }, "  " + n.tags.split(",").map((x) => "#" + x.trim()).filter((x) => x.length > 1).join(" ")) : null), h("span", { class: "muted" }, `${sname(n.store_id)} ${n.author_name}`))) : h("p", { class: "muted", style: "margin:4px 0" }, "기록이 없어요"),
       h("button", { class: "btn ghost slim", style: "margin-top:8px", onclick: () => { wkOpen = true; draw(); } }, "🗂 전체 업무 기록 열기"));
   }
 
   function allView() {
     const totalBad = ov.stores.reduce((s, st) => s + needs(st).filter(([, c]) => c === "bad").length, 0);
     return h("div", null,
-      h("section", { class: "card" }, h("h2", null, "오늘 한눈에"),
-        totalBad > 0 ? h("p", { class: "err" }, `확인이 필요한 항목 ${totalBad}건`) : h("p", { class: "muted" }, "지금 밀린 항목이 없어요 👍"),
+      // 대분류 3칸(굵은 선): 오늘 현황 / 업무 기록(wkBoard 안) / 사업장별 현황. 칸 안의 항목은 연한 선
+      h("section", { class: "sec", style: "margin-top:0" }, h("h2", { class: "sec-title" }, "오늘 한눈에"),
+        totalBad > 0 ? h("p", { class: "alert", style: "margin:0 0 12px" }, `확인이 필요한 항목 ${totalBad}건`) : h("p", { class: "muted" }, "지금 밀린 항목이 없어요 👍"),
         board()),
-      h("button", { class: "btn primary", style: "width:100%;margin-top:8px", onclick: () => { aiOpen = true; draw(); } }, "🗣 말로 업무지시 (AI)"),
-      h("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin:8px 0" },
-        h("button", { class: "btn primary", style: "flex:1", onclick: () => { tkOpen = true; draw(); } }, "📌 업무지시 (전 직원)"),
-        h("button", { class: "btn primary", style: "flex:1", onclick: () => { libOpen = true; draw(); } }, "📁 서식·자료함"),
-        h("button", { class: "btn primary", style: "flex:1", onclick: () => { pjOpen = true; draw(); } }, "📂 프로젝트")),
-      h("div", { class: "list" }, ov.stores.map(card)),
+      // 핵심 버튼(레드 채움)은 말로 업무지시 하나. 나머지 이동은 한 덩어리 행 목록(.rowlist + .chev)
+      h("button", { class: "btn primary", style: "width:100%;margin-top:20px", onclick: () => { aiOpen = true; draw(); } }, "🗣 말로 업무지시 (AI)"),
+      h("div", { class: "rowlist", style: "margin:8px 0" },
+        h("button", { class: "item", onclick: () => { tkOpen = true; draw(); } }, "📌 업무지시 (전 직원)", h("span", { class: "chev", "aria-hidden": "true" })),
+        h("button", { class: "item", onclick: () => { libOpen = true; draw(); } }, "📁 서식·자료함", h("span", { class: "chev", "aria-hidden": "true" })),
+        h("button", { class: "item", onclick: () => { pjOpen = true; draw(); } }, "📂 프로젝트", h("span", { class: "chev", "aria-hidden": "true" }))),
+      h("div", { class: "list sec" }, ov.stores.map(card)),
       // 대표(마스터)만: 모든 사업장 계정을 한 곳에서 관리 (부대표는 전체 소속)
       profile.role === "owner" && h("button", { class: "btn ghost", style: "margin-top:12px", onclick: () => { accountsOpen = true; draw(); } }, "👤 전체 계정 관리 (사업장·부대표 포함)"),
       // 건의함은 대표만(부대표도 못 봄)

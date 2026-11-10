@@ -67,9 +67,9 @@ export async function renderChecklist(root) {
     return h("div", { class: "page" },
       h("div", { class: "datebar" }, h("b", null, labelMD(data.date)), h("span", null, `${doneN} / ${checks.length} 완료`)),
       h("div", { class: "progress" }, h("i", { style: `width:${checks.length ? Math.round((doneN / checks.length) * 100) : 0}%` })),
-      h("button", { class: "btn ghost", style: "border-color:var(--bad);color:var(--bad)", onclick: report }, "🚨 이상 보고 (재료 이상·이물·몸이 아파요)"),
+      h("button", { class: "btn danger", onclick: report }, "🚨 이상 보고 (재료 이상·이물·몸이 아파요)"),
       !data.items.length && h("p", { class: "muted" }, "점검 항목이 아직 없어요. 대표님이 항목을 설정하면 여기에 나와요."),
-      sections.map((s) => h("div", null, h("div", { class: "cat-title" }, s + ({ weekly: " (이번 주 1회)", monthly: " (이번 달 1회)" }[data.items.find((i) => i.section === s)?.freq] ?? "")), h("div", { class: "list" }, data.items.filter((i) => i.section === s).map(item)))));
+      sections.map((s) => h("div", null, h("div", { class: "cat-title" }, s + ({ weekly: " (이번 주 1회)", monthly: " (이번 달 1회)" }[data.items.find((i) => i.section === s)?.freq] ?? "")), h("div", { class: "rowlist" }, data.items.filter((i) => i.section === s).map(item)))));
   }
 
   draw();

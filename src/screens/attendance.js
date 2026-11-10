@@ -103,9 +103,9 @@ export async function renderAttendance(root, profile) {
   function listCard() {
     const total = mine.reduce((s, r) => s + (recMinutes(r) ?? 0), 0);
     const days = new Set(mine.filter((r) => r.out_at).map((r) => r.work_date)).size;
-    return h("section", { class: "card" }, h("h2", null, "이번 달 근무"),
+    return h("section", { class: "sec stack" }, h("h2", { class: "sec-title" }, "이번 달 근무"),
       h("p", { class: "att-sum" }, `${days}일 · ${fmtDur(total)}`),
-      h("div", { class: "list" }, mine.slice(0, 15).map((r) => {
+      h("div", { class: mine.length ? "rowlist" : "list" }, mine.slice(0, 15).map((r) => {
         const m = recMinutes(r);
         return h("div", { class: "item col static" },
           h("b", null, labelMD(r.work_date)),
@@ -117,7 +117,7 @@ export async function renderAttendance(root, profile) {
 
   function pushBtn() {
     const on = api.pushEnabled();
-    return h("button", { class: "btn " + (on ? "ghost" : "primary") + " slim", onclick: async () => {
+    return h("button", { class: "btn " + (on ? "ghost" : "weak") + " slim", onclick: async () => {
       try { await api.enablePush(); toast("알림을 켰어요 (퇴근 확인 알림을 받아요)"); draw(); } catch (e) { toast(e.message, 5000); }
     } }, on ? "🔔 퇴근 알림 켜짐" : "🔔 퇴근 알림 켜기");
   }

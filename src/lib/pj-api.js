@@ -112,7 +112,7 @@ export function makePj({ sb, me }) {
     if (color && !/^#[0-9a-fA-F]{6}$/.test(color)) throw kerr("색 형식이 맞지 않아요");
     const c = await sb(), uid = await myId();
     const { data, error } = await c.from("pj_projects")
-      .insert({ name: nm, descr: ds, color: color || "#3b82f6", ai_ok: ai_ok !== false, created_by: uid })
+      .insert({ name: nm, descr: ds, color: color || "#A3161A", ai_ok: ai_ok !== false, created_by: uid })
       .select("id").single();
     if (error) throw error;
     const id = data.id;

@@ -208,8 +208,8 @@ export async function renderOwner(root, ctx, opts = {}) {
       h("p", { class: "muted" }, "비밀번호는 저장되지 않아요(자동 생성한 임시 비밀번호는 만든 직후 한 번만 보여요). 잊으면 새로 정해 주세요."),
       usersBusy && h("p", { class: "muted" }, "불러오는 중…"),
       usersMsg && h("p", { class: "err" }, usersMsg),
-      ...groupedUsers().map(([label, list]) => [h("h2", { style: "margin-top:14px" }, `${label} (${list.length}명)`), h("div", { class: "list" }, list.map((u) => h("div", { class: "acc" },
-        h("div", null, h("b", null, u.display_name || "(이름 없음)"), u.job_title && h("span", { class: "muted" }, " · " + u.job_title), " ", h("span", { class: "badge ok" }, ROLE_KO[u.role] ?? "역할 없음")),
+      ...groupedUsers().map(([label, list]) => [h("h2", { class: "cat-title" }, `${label} (${list.length}명)`), list.length > 0 && h("div", { class: "rowlist" }, list.map((u) => h("div", { class: "acc" },
+        h("div", null, h("b", null, u.display_name || "(이름 없음)"), u.job_title && h("span", { class: "muted" }, " · " + u.job_title), " ", h("span", { class: "badge" }, ROLE_KO[u.role] ?? "역할 없음")),
         h("div", { class: "muted" }, u.email),
         u.last_sign_in_at && h("div", { class: "muted" }, "마지막 로그인 " + new Date(u.last_sign_in_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })),
         h("div", { class: "acc-btns" },
@@ -222,7 +222,7 @@ export async function renderOwner(root, ctx, opts = {}) {
             const go = await confirmDialog("계정을 삭제할까요?", [`${u.display_name || ""} ${u.email}`.trim(), "삭제하면 로그인할 수 없어요 (제출한 보고는 남아요)"], "취소", "삭제");
             if (go) await userAction({ action: "remove", user_id: u.id }, "삭제했어요");
           } }, "삭제")))))]).flat(),
-      h("section", { class: "card" }, h("h2", null, "여러 명 한 번에 추가"),
+      h("section", { class: "sec stack" }, h("h2", { class: "sec-title" }, "여러 명 한 번에 추가"),
         h("p", { class: "muted" }, "한 줄에 한 명씩 \"이름 직책\"(직책은 생략 가능). 이메일과 임시 비밀번호는 자동으로 만들어요."),
         storePicker(),
         h("textarea", { class: "inp", rows: "4", placeholder: "김철수 주방\n이영희 포장", value: bulk.text, oninput: (e) => (bulk.text = e.target.value) }),
@@ -232,7 +232,7 @@ export async function renderOwner(root, ctx, opts = {}) {
           h("p", { class: "ok-text" }, "아래 정보를 직원에게 전달하세요. 비밀번호는 이 화면을 벗어나면 다시 볼 수 없어요."),
           h("pre", { class: "kakao" }, bulk.result.map((r) => r.ok ? `${r.name}\n  이메일: ${r.email}\n  비밀번호: ${r.password}` : `${r.name}: 실패 — ${r.err}`).join("\n\n")),
           h("button", { class: "btn ghost", onclick: async () => toast((await copyText(bulk.result.filter((r) => r.ok).map((r) => `${r.name} / ${r.email} / ${r.password}`).join("\n"))) ? "복사했어요" : "복사 실패") }, "전체 복사"))),
-      h("section", { class: "card" }, h("h2", null, "계정 한 명 추가"),
+      h("section", { class: "sec stack" }, h("h2", { class: "sec-title" }, "계정 한 명 추가"),
         storePicker(),
         h("input", { type: "text", class: "inp", placeholder: "이름", value: newAcc.name, oninput: (e) => (newAcc.name = e.target.value) }),
         h("input", { type: "text", class: "inp", placeholder: "직책 (예: 홀 서버, 주방, 매니저)", value: newAcc.title, maxlength: "30", oninput: (e) => (newAcc.title = e.target.value) }),
@@ -277,8 +277,9 @@ export async function renderOwner(root, ctx, opts = {}) {
         opts.store?.kind === "hq" && h("button", { class: "btn ghost slim", onclick: () => { showWork = true; draw(); } }, "🗂 업무 기록"),
         isMaster && h("button", { class: "btn ghost slim", onclick: () => { showAccounts = true; loadUsers(); } }, "👤 계정")),
       clOpen && clOpen.length > 0 && h("button", { class: "item", style: "margin:4px 0 8px", onclick: () => { showCl = true; draw(); } },
-        h("b", null, `처리 안 된 클레임 ${clOpen.length}건`),
-        h("span", { class: "badges" }, clOpen.some((c) => c.severity === "severe") ? badge("중대 포함", "bad") : badge("확인 필요", "warn"))),
+        h("b", { style: "margin-right:auto" }, `처리 안 된 클레임 ${clOpen.length}건`),
+        h("span", { class: "badges" }, clOpen.some((c) => c.severity === "severe") ? badge("중대 포함", "bad") : badge("확인 필요", "warn")),
+        h("span", { class: "chev", "aria-hidden": "true" })),
       isDemo && h("div", { class: "banner" }, "데모 모드 · 샘플 데이터로 화면을 확인할 수 있어요",
         h("button", { class: "linkbtn", onclick: async () => { await api.seedSample(); await load(); toast("샘플 데이터를 채웠어요"); } }, "샘플 채우기"),
         h("button", { class: "linkbtn", onclick: async () => { await api.resetDemo(); await load(); } }, "비우기")),
@@ -290,7 +291,7 @@ export async function renderOwner(root, ctx, opts = {}) {
 
   function pushBar() {
     const on = api.pushEnabled();
-    return h("button", { class: "btn " + (on ? "ghost" : "primary") + " slim", onclick: async () => {
+    return h("button", { class: "btn " + (on ? "ghost" : "weak") + " slim", onclick: async () => {
       try { await api.enablePush(); toast("알림을 켰어요"); draw(); } catch (e) { toast(e.message, 5000); }
     } }, on ? "🔔 알림 켜짐" : "🔔 알림 켜기");
   }
@@ -302,14 +303,15 @@ export async function renderOwner(root, ctx, opts = {}) {
       const date = addDays(today, -i);
       const r = map[date];
       list.push(h("button", { class: "item", onclick: () => { detail = { date, r }; draw(); } },
-        h("b", null, labelMD(date) + (i === 0 ? " 오늘" : "")),
+        h("b", { style: "margin-right:auto" }, labelMD(date) + (i === 0 ? " 오늘" : "")),
         h("span", { class: "badges" },
           r ? badge("제출", "ok") : badge("미제출", "bad"),
           r?.has_claim && badge("클레임 있음", "warn"),
           r?.incomplete && badge("미완료 항목 있음", "warn2"),
-          r?.data?.request?.trim() && badge("요청사항", "info"))));
+          r?.data?.request?.trim() && badge("요청사항", "info")),
+        h("span", { class: "chev", "aria-hidden": "true" })));
     }
-    return h("div", { class: "list" }, list);
+    return h("div", { class: "rowlist" }, list);
   }
 
   function claimsView() {
@@ -346,10 +348,10 @@ export async function renderOwner(root, ctx, opts = {}) {
       const d = normalize(r.data, date), c = checkText(d), s = summarize(d);
       return h("div", null,
         h("div", { class: "badges" }, badge("제출", "ok"), s.has_claim && badge("클레임 있음", "warn"), s.incomplete && badge("미완료: " + s.reasons.join(", "), "warn2")),
-        h("section", { class: "card" }, h("h2", null, "1. 근태"), h("p", { class: "plain-pre" }, attText(d))),
-        h("section", { class: "card" }, h("h2", null, "2. 클레임·특이사항"), h("p", { class: "plain-pre" }, claimText(d))),
-        h("section", { class: "card" }, h("h2", null, "3. 점검"), h("ul", { class: "plain" }, [c.review, c.open, c.yardTrash, c.closing].map((t) => h("li", null, t)))),
-        d.request.trim() && h("section", { class: "card" }, h("h2", null, "4. 요청사항"), h("p", { class: "plain-pre" }, d.request.trim())),
+        h("section", { class: "sec" }, h("h2", { class: "sec-title" }, "1. 근태"), h("p", { class: "plain-pre" }, attText(d))),
+        h("section", { class: "sec" }, h("h2", { class: "sec-title" }, "2. 클레임·특이사항"), h("p", { class: "plain-pre" }, claimText(d))),
+        h("section", { class: "sec" }, h("h2", { class: "sec-title" }, "3. 점검"), h("ul", { class: "plain" }, [c.review, c.open, c.yardTrash, c.closing].map((t) => h("li", null, t)))),
+        d.request.trim() && h("section", { class: "sec" }, h("h2", { class: "sec-title" }, "4. 요청사항"), h("p", { class: "plain-pre" }, d.request.trim())),
         h("p", { class: "muted" }, "제출 시각 " + new Date(r.submitted_at).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })),
         h("button", { class: "btn ghost", onclick: async () => toast((await copyText(kakaoText(date, d))) ? "복사했어요" : "복사 실패") }, "카톡 양식 복사"));
     })();

@@ -12,7 +12,8 @@ const NEEDS_INV = ["식자재·매입", "쌀·곡물 매입", "수산·꽃게 �
 const OWNERS = ["이홍근", "김형곤", "이한만", "이명근", "이경희"];
 
 // 한눈에 보는 비율 막대 + 범례. 항목이 많으면 작은 것들은 "그 외"로 묶는다.
-const PALETTE = ["#2f6f4e", "#3b7dd8", "#d98a1f", "#b84a4a", "#7a5cc7", "#4a9aa0", "#c2569a", "#8a8a8a"];
+// 막대 색은 디자인 토큰만 쓴다(8번째 = "그 외"는 가장 연한 중립색). 구분은 범례의 이름·퍼센트 글자로도 된다
+const PALETTE = ["var(--ink)", "var(--red)", "var(--info)", "var(--warn)", "var(--ok)", "var(--muted)", "var(--line-ctl)", "var(--dim)"];
 function share(items) {
   const list = items.filter((i) => i.total > 0);
   const sum = list.reduce((s, i) => s + i.total, 0);
@@ -20,8 +21,8 @@ function share(items) {
   const top = list.length > 8 ? [...list.slice(0, 7), { name: "그 외", total: list.slice(7).reduce((s, i) => s + i.total, 0) }] : list;
   const col = (k) => PALETTE[k % PALETTE.length];
   return h("div", { style: "margin:6px 0 10px" },
-    h("div", { style: "display:flex;height:18px;border-radius:9px;overflow:hidden" }, top.map((i, k) => h("div", { title: i.name, style: `width:${(i.total / sum * 100).toFixed(2)}%;background:${col(k)}` }))),
-    h("div", { style: "display:flex;flex-wrap:wrap;gap:4px 14px;font-size:13px;margin-top:6px" }, top.map((i, k) =>
+    h("div", { style: "display:flex;gap:2px;height:18px;border-radius:9px;overflow:hidden" }, top.map((i, k) => h("div", { title: i.name, style: `width:${(i.total / sum * 100).toFixed(2)}%;background:${col(k)}` }))),
+    h("div", { style: "display:flex;flex-wrap:wrap;gap:4px 14px;font-size:.8rem;margin-top:6px" }, top.map((i, k) =>
       h("span", null, h("span", { style: `display:inline-block;width:10px;height:10px;border-radius:3px;background:${col(k)};margin-right:4px` }), `${i.name} ${Math.round(i.total / sum * 100)}%`))));
 }
 
@@ -62,13 +63,13 @@ export async function renderSales(root, onBack, opts = {}) {
     try { await api.stDelRule(keyword); toast("규칙을 지웠어요", 2000); await load(); } catch (e) { toast(e.message, 5000); }
   }
   const stat = (t, v, sub, cls = "") =>
-    h("div", { style: "flex:1;min-width:130px;padding:10px;border:1px solid #ddd;border-radius:12px" },
-    h("div", { class: "muted", style: "font-size:12px" }, t), h("b", { class: cls, style: "font-size:17px" }, v), sub && h("div", { class: "muted", style: "font-size:12px" }, sub));
+    h("div", { class: "entry", style: "flex:1;min-width:130px" },
+    h("div", { class: "muted" }, t), h("b", { class: cls, style: "font-size:17px" }, v), sub && h("div", { class: "muted" }, sub));
 
   function draw() {
     try { drawInner(); } catch (e) {
       root.replaceChildren(h("div", { class: "page" }, h("button", { class: "linkbtn back", onclick: onBack }, "← 목록"),
-        h("p", { class: "err" }, "화면을 그리다 오류가 났어요: " + e.message), h("pre", { style: "font-size:11px;white-space:pre-wrap" }, String(e.stack ?? "").slice(0, 600))));
+        h("p", { class: "err" }, "화면을 그리다 오류가 났어요: " + e.message), h("pre", { style: "font-size:.8rem;white-space:pre-wrap" },String(e.stack ?? "").slice(0, 600))));
     }
   }
 
@@ -109,57 +110,57 @@ export async function renderSales(root, onBack, opts = {}) {
         share(inB.map((g) => ({ name: g.group, total: g.total }))),
         inB.length ? inB.map((g) => h("details", { style: "margin:6px 0" },
           h("summary", null, h("b", null, g.group), `  ${won(g.total)}  (${g.n}건)`),
-          g.items.slice(0, 15).map((i) => h("div", { class: "srow" }, h("span", { class: "muted" }, i.name), h("span", null, won(i.total))))))
+          g.items.slice(0, 15).map((i) => h("div", { class: "lrow" }, h("span", { class: "muted" }, i.name), h("span", { class: "num" }, won(i.total))))))
           : h("p", { class: "muted" }, "이 달 입금 내역이 없어요"),
-        h("p", { class: "muted", style: "font-size:12px" }, "카드사 입금은 카드 매출, 대표·가족 이체는 매출이 아니에요. 입금은 매출과 며칠 차이가 날 수 있어요.")),
+        h("p", { class: "muted" }, "카드사 입금은 카드 매출, 대표·가족 이체는 매출이 아니에요. 입금은 매출과 며칠 차이가 날 수 있어요.")),
 
       h("section", { class: "card" }, h("h2", null, "지출 분석 (출금)"),
         share(sp.cats.map((c) => ({ name: c.name, total: c.total }))),
         sp.cats.length ? sp.cats.map((c) => h("details", { style: "margin:6px 0" },
           h("summary", null, h("b", null, c.name), `  ${won(c.total)}  (${c.n}건)`),
-          c.items.slice(0, 25).map((i) => h("div", { class: "srow" }, h("span", { class: "muted" }, i.name, " ", h("button", { class: "linkbtn", style: "font-size:12px", onclick: () => assign(i.name, c.name) }, "분류")), h("span", null, won(i.total))))))
+          c.items.slice(0, 25).map((i) => h("div", { class: "lrow" }, h("span", { class: "muted" }, i.name, " ", h("button", { class: "linkbtn", onclick: () => assign(i.name, c.name) }, "분류")), h("span", { class: "num" }, won(i.total))))))
           : h("p", { class: "muted" }, "출금 내역이 없어요. 통장 거래내역을 올리면 나와요."),
         sp.unsure.length > 0 && h("div", { class: "banner", style: "margin-top:8px;flex-direction:column;align-items:flex-start" },
           h("b", null, `분류 확인이 필요한 거래처 ${sp.unsure.length}곳`),
-          h("span", { class: "muted", style: "font-size:12px" }, "쌀·식자재 등 매입처가 사람 이름으로 찍힌 경우예요. 눌러서 항목을 정해 두면 매달 자동으로 분류돼요."),
-          sp.unsure.slice(0, 12).map((i) => h("div", { class: "srow", style: "width:100%" }, h("span", null, i.name), h("span", null, won(i.total), " ", h("button", { class: "btn ghost slim", onclick: () => assign(i.name, i.from) }, "분류"))))),
+          h("span", { class: "muted" }, "쌀·식자재 등 매입처가 사람 이름으로 찍힌 경우예요. 눌러서 항목을 정해 두면 매달 자동으로 분류돼요."),
+          sp.unsure.slice(0, 12).map((i) => h("div", { class: "lrow", style: "width:100%" },h("span", null, i.name), h("span", null, won(i.total), " ", h("button", { class: "btn ghost slim", onclick: () => assign(i.name, i.from) }, "분류"))))),
         rules.length > 0 && h("details", { style: "margin-top:8px" }, h("summary", null, `정해 둔 거래처 분류 ${rules.length}개`),
-          rules.map((r) => h("div", { class: "srow" }, h("span", null, r.keyword, " → ", h("b", null, r.category)), h("button", { class: "linkbtn", onclick: () => unassign(r.keyword) }, "지우기")))),
+          rules.map((r) => h("div", { class: "lrow" }, h("span", null, r.keyword," → ", h("b", null, r.category)), h("button", { class: "linkbtn", onclick: () => unassign(r.keyword) }, "지우기")))),
         sp.daily.length > 0 && h("details", null, h("summary", null, `일별 지출 (${sp.daily.length}일)`),
-          h("table", { class: "stats" }, h("tbody", null, sp.daily.map((d) => h("tr", null, h("td", null, d.date.slice(5)), h("td", { style: "text-align:right" }, won(d.amount)))))))),
+          h("table", { class: "stats" }, h("tbody", null, sp.daily.map((d) => h("tr", null, h("td", null, d.date.slice(5)), h("td", { class: "num", style: "text-align:right" }, won(d.amount)))))))),
 
       h("section", { class: "card" }, h("h2", null, "🧾 계산서 대조 (매입)"),
         !inv ? h("p", { class: "muted" }, "홈택스 매입 (세금)계산서 엑셀을 올리면 통장 출금과 맞춰서 '안 준 돈'과 '계산서 없이 나간 돈'을 찾아 줘요. 수금 대조 화면의 '🧾 매입 계산서'에서 올려요.")
           : [
-            h("p", { class: "muted", style: "font-size:12px" }, `${firstInv} ~ 올린 계산서 ${invs.length}장 · 거래처 ${inv.vendors.length}곳`),
+            h("p", { class: "muted" }, `${firstInv} ~ 올린 계산서 ${invs.length}장 · 거래처 ${inv.vendors.length}곳`),
             h("div", { style: "display:flex;gap:8px;flex-wrap:wrap" },
               stat("계산서 합계", won(inv.totals.invoiced), `${invs.length}장`),
               stat("통장에서 준 돈", won(inv.totals.paid), "계산서 거래처로 확인된 출금"),
               stat("덜 준 돈", won(inv.totals.owed), `${inv.vendors.filter((v) => v.owed > 1000).length}곳`, inv.totals.owed ? "err" : "ok-text"),
               stat("계산서 없는 출금", won(inv.unmatched.filter((u) => NEEDS_INV.includes(u.category)).reduce((s, u) => s + u.total, 0)), "매입으로 보이는데 계산서 없음", "err")),
-            h("h3", { style: "margin:12px 0 4px" }, "계산서는 왔는데 덜 준 곳"),
+            h("h3", { class: "sub-title" }, "계산서는 왔는데 덜 준 곳"),
             inv.vendors.filter((v) => v.owed > 1000).length
-              ? inv.vendors.filter((v) => v.owed > 1000).slice(0, 30).map((v) => h("div", { class: "srow" },
-                h("span", null, v.name, " ", h("span", { class: "muted", style: "font-size:12px" }, `계산서 ${won(v.invoiced)} · 준 돈 ${won(v.paid)}`)),
-                h("b", { class: "err" }, won(v.owed))))
+              ? inv.vendors.filter((v) => v.owed > 1000).slice(0, 30).map((v) => h("div", { class: "lrow" },
+                h("span", null, v.name, " ", h("span", { class: "muted" }, `계산서 ${won(v.invoiced)} · 준 돈 ${won(v.paid)}`)),
+                h("b", { class: "err num" }, won(v.owed))))
               : h("p", { class: "muted" }, "덜 준 곳이 없어요 🎉"),
-            h("p", { class: "muted", style: "font-size:12px" }, "다른 통장(대표 개인·다른 사업장·카드)으로 낸 돈은 여기서 안 잡혀요. 그런 곳은 '덜 준 돈'으로 보일 수 있어요."),
-            h("h3", { style: "margin:12px 0 4px" }, "계산서 없이 나간 돈 (매입으로 보이는 것)"),
+            h("p", { class: "muted" }, "다른 통장(대표 개인·다른 사업장·카드)으로 낸 돈은 여기서 안 잡혀요. 그런 곳은 '덜 준 돈'으로 보일 수 있어요."),
+            h("h3", { class: "sub-title" }, "계산서 없이 나간 돈 (매입으로 보이는 것)"),
             inv.unmatched.filter((u) => NEEDS_INV.includes(u.category)).length
-              ? inv.unmatched.filter((u) => NEEDS_INV.includes(u.category)).slice(0, 30).map((u) => h("div", { class: "srow" },
-                h("span", null, u.name, " ", h("span", { class: "muted", style: "font-size:12px" }, `${u.n}건 · ${u.category}`), " ", h("button", { class: "linkbtn", style: "font-size:12px", onclick: () => assign(u.name, u.category) }, "분류")),
-                h("b", null, won(u.total))))
+              ? inv.unmatched.filter((u) => NEEDS_INV.includes(u.category)).slice(0, 30).map((u) => h("div", { class: "lrow" },
+                h("span", null, u.name, " ", h("span", { class: "muted" }, `${u.n}건 · ${u.category}`), " ", h("button", { class: "linkbtn", onclick: () => assign(u.name, u.category) }, "분류")),
+                h("b", { class: "num" }, won(u.total))))
               : h("p", { class: "muted" }, "없어요 🎉"),
-            h("p", { class: "muted", style: "font-size:12px" }, "급여·임차료·세금·대출처럼 계산서가 없어도 되는 건 '분류'로 항목을 정해 주면 여기서 빠져요."),
+            h("p", { class: "muted" }, "급여·임차료·세금·대출처럼 계산서가 없어도 되는 건 '분류'로 항목을 정해 주면 여기서 빠져요."),
             h("details", { style: "margin-top:8px" }, h("summary", null, "거래처별 전체 보기"),
-              inv.vendors.map((v) => h("div", { class: "srow" },
-                h("span", null, v.name, " ", h("span", { class: "muted", style: "font-size:12px" }, `${v.category} · 계산서 ${won(v.invoiced)} / 출금 ${won(v.paid)}`)),
+              inv.vendors.map((v) => h("div", { class: "lrow" },
+                h("span", null, v.name, " ", h("span", { class: "muted" }, `${v.category} · 계산서 ${won(v.invoiced)} / 출금 ${won(v.paid)}`)),
                 h("span", { class: v.status === "완납" ? "ok-text" : v.status === "초과" ? "muted" : "err" }, v.status)))),
           ]),
 
       view === thisMonth && h("section", { class: "card" }, h("h2", null, "앞으로 정산 예정 (14일)"),
-        r.upcoming.length ? r.upcoming.map((u) => h("div", { class: "srow" },
-          h("span", null, `${u.date.slice(5)} · ${u.who}${u.estimated ? " (추정)" : ""}`), h("b", null, won(u.amount))))
+        r.upcoming.length ? r.upcoming.map((u) => h("div", { class: "lrow" },
+          h("span", null, `${u.date.slice(5)} · ${u.who}${u.estimated ? " (추정)" : ""}`), h("b", { class: "num" }, won(u.amount))))
           : h("p", { class: "muted" }, "예정된 정산이 없어요. 네이버·톡딜 정산내역을 올리면 나와요.")),
 
       view === thisMonth && h("section", { class: "card" }, h("h2", null, "거래처별 받을 돈 (플랫폼·외주 포함)"),

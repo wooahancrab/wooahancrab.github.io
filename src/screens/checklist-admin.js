@@ -55,14 +55,14 @@ export async function renderChecklistAdmin(root, onBack, opts = {}) {
   function boardView() {
     if (!board) return h("p", { class: "muted" }, "불러오는 중…");
     return h("div", null,
-      board.reports.length > 0 && h("section", { class: "card" }, h("h2", null, `🚨 확인 안 한 이상 보고 ${board.reports.length}건`),
+      board.reports.length > 0 && h("section", { class: "sec stack" }, h("h2", { class: "sec-title" }, `🚨 확인 안 한 이상 보고 ${board.reports.length}건`),
         board.reports.map((r) => h("div", { class: "entry" },
           h("div", { class: "entry-head" }, h("span", null, `${r.user_name} · ${labelMD(dateOf(r.at))} ${fmtHM(r.at)}`)),
           h("p", { class: "plain-pre" }, r.note),
           h("button", { class: "btn ghost slim", onclick: () => act(() => api.chkResolve(r.id), "확인했어요") }, "확인 완료")))),
-      h("section", { class: "card" }, h("h2", null, `오늘 점검 현황 (${labelMD(board.date)})`),
+      h("section", { class: "sec stack" }, h("h2", { class: "sec-title" }, `오늘 점검 현황 (${labelMD(board.date)})`),
         !board.people.length ? h("p", { class: "muted" }, "담당 직원이 없어요") :
-          h("div", { class: "list" }, board.people.map((p) => h("div", { class: "item col" },
+          h("div", { class: "rowlist" }, board.people.map((p) => h("div", { class: "item col static" },
             h("b", null, `${p.name} `, h("span", { class: "muted" }, (p.job_title ? p.job_title + " · " : "") + (ROLE_KO[p.role] ?? ""))),
             h("span", null, `체크 ${p.done} / ${p.total}`, p.bad > 0 ? h("span", { class: "badge bad", style: "margin-left:6px" }, `기준 벗어남 ${p.bad}`) : null,
               p.last_at ? h("span", { class: "muted" }, `  · 마지막 ${fmtHM(p.last_at)}`) : h("span", { class: "muted" }, "  · 아직 기록 없음")))))));
@@ -75,7 +75,7 @@ export async function renderChecklistAdmin(root, onBack, opts = {}) {
       master && !items.length && h("button", { class: "btn ghost", onclick: () => act(() => api.chkSeed(), "매뉴얼 기본 항목을 불러왔어요") }, "매뉴얼 기본 항목 불러오기 (붙임1-3·서식01)"),
       master && items.length > 0 && h("button", { class: "linkbtn", onclick: async () => { if (confirm("기존 항목과 점검 기록을 모두 지우고 매뉴얼 기본 항목으로 다시 만들까요?")) await act(() => api.chkSeed(true), "다시 불러왔어요"); } }, "매뉴얼 기준으로 다시 불러오기 (기존 항목·기록 삭제)"),
       !master && h("p", { class: "muted" }, "항목과 기준값은 대표님만 바꿀 수 있어요"),
-      h("div", { class: "list" }, items.map((it) => h("div", { class: "item col", style: it.active ? "" : "opacity:.5" },
+      h("div", { class: items.length ? "rowlist" : "list" }, items.map((it) => h("div", { class: "item col static", style: it.active ? "" : "background:var(--soft)" },
         h("b", null, it.title, " ", h("span", { class: "muted" }, `${it.section} · ${it.kind === "number" ? "숫자" : "체크"}${it.freq === "weekly" ? " · 매주" : it.freq === "monthly" ? " · 매달" : ""}${it.audience ? " · 대상: " + it.audience : ""}${it.active ? "" : " · 사용 안 함"}`)),
         it.kind === "number" && h("span", { class: "muted" }, rangeText(it)),
         master && h("button", { class: "btn ghost slim", onclick: () => editItem(it) }, "수정")))));

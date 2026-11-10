@@ -34,11 +34,11 @@ export async function renderTasksAdmin(root, onBack, opts = {}) {
     // 전 직원 모드: 사업장별로 묶인 체크 목록 — 여러 명을 고르면 한 명씩 따로(개별로) 지시된다
     const boxes = [];
     const who = ALL
-      ? h("div", { class: "stack", style: "max-height:240px;overflow:auto;border:1px solid #ddd;border-radius:10px;padding:8px" }, ...groups.map((sid) => {
+      ? h("div", { class: "stack", style: "max-height:240px;overflow:auto;border:1px solid var(--line-ctl);border-radius:var(--r-md);padding:var(--s2)" }, ...groups.map((sid) => {
         const s = people.find((p) => p.store_id === sid)?.stores, mine = people.filter((p) => p.store_id === sid);
-        const bs = mine.map((p) => { const b = h("input", { type: "checkbox", value: p.user_id }); boxes.push(b); return h("label", { style: "display:flex;gap:8px;align-items:center;margin:4px 0" }, b, `${p.display_name}${p.job_title ? " (" + p.job_title + ")" : ""}`); });
+        const bs = mine.map((p) => { const b = h("input", { type: "checkbox", value: p.user_id }); boxes.push(b); return h("label", { style: "display:flex;gap:10px;align-items:center;min-height:44px" }, b,`${p.display_name}${p.job_title ? " (" + p.job_title + ")" : ""}`); });
         const all = h("input", { type: "checkbox" }); all.onchange = () => mine.forEach((_, i) => { bs[i].firstChild.checked = all.checked; });
-        return h("div", null, h("label", { style: "display:flex;gap:8px;align-items:center;font-weight:600" }, all, s?.display_name ?? s?.name ?? "사업장"), ...bs);
+        return h("div", null, h("label", { style: "display:flex;gap:10px;align-items:center;min-height:44px;font-weight:700" }, all,s?.display_name ?? s?.name ?? "사업장"), ...bs);
       }))
       : h("select", { class: "inp" }, ...people.map(opt));
     const picked = () => (ALL ? boxes.filter((b) => b.checked).map((b) => b.value) : [who.value]);
@@ -85,7 +85,7 @@ export async function renderTasksAdmin(root, onBack, opts = {}) {
       h("button", { class: "btn primary", onclick: create }, "+ 업무 지시"),
       err && h("p", { class: "err" }, "불러오기 실패: " + err),
       sum.size > 0 && h("section", { class: "card" }, h("h2", null, "담당자별"),
-        [...sum].map(([k, s]) => h("div", { class: "srow" }, h("span", null, k), h("b", null, `${s.open}건`, s.late ? h("span", { class: "badge bad", style: "margin-left:6px" }, `밀림 ${s.late}`) : null)))),
+        [...sum].map(([k, s]) => h("div", { class: "lrow" }, h("span", null, k), h("b", null, `${s.open}건`, s.late ? h("span", { class: "badge bad", style: "margin-left:6px" }, `밀림 ${s.late}`) : null)))),
       h("div", { class: "tabs" }, [["open", "진행 중"], ["done", "최근 완료"]].map(([k, l]) => h("button", { class: "tab" + (tab === k ? " on" : ""), onclick: () => { tab = k; draw(); } }, l))),
       !data ? h("p", { class: "muted" }, "불러오는 중…") : !list.length ? h("p", { class: "muted" }, tab === "open" ? "진행 중인 업무가 없어요" : "최근 완료한 업무가 없어요") : h("div", { class: "list" }, list.map(row)));
   }

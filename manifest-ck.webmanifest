@@ -6,8 +6,8 @@
   "start_url": "/ck/",
   "scope": "/ck/",
   "display": "standalone",
-  "background_color": "#f4fbf8",
-  "theme_color": "#2e7d6b",
+  "background_color": "#FBF8F9",
+  "theme_color": "#FBF8F9",
   "icons": [
     { "src": "/icons/ck-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "/icons/ck-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },

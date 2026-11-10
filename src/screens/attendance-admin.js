@@ -45,7 +45,7 @@ export async function renderAttendanceAdmin(root, onBack, opts = {}) {
   /* ---------- 오늘 ---------- */
   function todayTab() {
     const nowHM = fmtHM(new Date().toISOString());
-    return h("div", { class: "list" }, emps.map((e) => {
+    return h("div", { class: emps.length ? "rowlist" : "list" }, emps.map((e) => {
       const mine = rows.filter((r) => r.user_id === e.user_id && (r.work_date === today || !r.out_at));
       const open = mine.find((r) => !r.out_at);
       const done = mine.filter((r) => r.out_at && r.work_date === today);
@@ -75,14 +75,14 @@ export async function renderAttendanceAdmin(root, onBack, opts = {}) {
       missing.map((r) => h("div", { class: "empcard" },
         h("div", { class: "top2" }, h("b", null, nameOf(r)), badge("퇴근 누락", "bad")),
         h("span", null, `${labelMD(r.work_date)} ${fmtHM(r.in_at)} 출근` + (r.expected_out ? ` · 예상 퇴근 ${fmtHM(r.expected_out)}` : "")),
-        h("button", { class: "btn primary slim", onclick: () => editRecord(r) }, "퇴근 시각 입력"))),
+        h("button", { class: "btn ghost slim", onclick: () => editRecord(r) }, "퇴근 시각 입력"))),
       pending.length > 0 && h("h2", { class: "sec-title" }, `직원이 입력한 퇴근 ${pending.length}건 · 확인 필요`),
       pending.map((r) => h("div", { class: "empcard" },
         h("div", { class: "top2" }, h("b", null, nameOf(r)), badge("승인 대기", "info")),
         h("span", null, `${labelMD(r.work_date)} ${fmtHM(r.in_at)} ~ ${fmtHM(r.out_at)} (${fmtDur(recMinutes(r))})`),
         h("div", { class: "acc-btns" },
-          h("button", { class: "btn primary slim", onclick: async () => { try { await api.attApprove(r.id); toast("승인했어요"); await load(); } catch (e) { toast(e.message, 5000); } } }, "승인"),
-          h("button", { class: "btn ghost slim", onclick: () => editRecord(r) }, "수정")))),
+          h("button", { class: "btn ghost slim", onclick: async () => { try { await api.attApprove(r.id); toast("승인했어요"); await load(); } catch (e) { toast(e.message, 5000); } } }, "승인"),
+          h("button", { class: "btn weak slim", onclick: () => editRecord(r) }, "수정")))),
       !missing.length && !pending.length && h("p", { class: "muted" }, "확인할 항목이 없어요 👍"));
   }
 
@@ -115,7 +115,7 @@ export async function renderAttendanceAdmin(root, onBack, opts = {}) {
   function settingsTab() {
     const radius = h("input", { type: "number", class: "inp small", min: "30", max: "500", value: String(store?.radius_m ?? 100), "aria-label": "반경(미터)" });
     return h("div", null,
-      h("section", { class: "card" }, h("h2", null, "매장 위치"),
+      h("section", { class: "sec stack" }, h("h2", { class: "sec-title" }, "매장 위치"),
         h("p", { class: store?.lat != null ? "" : "err" }, store?.lat != null ? `설정됨 (${store.lat.toFixed(5)}, ${store.lng.toFixed(5)})` : "아직 설정되지 않았어요. 직원이 출근할 수 없어요."),
         h("p", { class: "hint" }, "매장 안에서 이 버튼을 눌러 주세요. 지금 이 폰의 위치가 매장 위치가 돼요."),
         h("button", { class: "btn primary", onclick: setStoreHere }, "📍 현재 위치를 매장 위치로 설정"),
@@ -124,7 +124,7 @@ export async function renderAttendanceAdmin(root, onBack, opts = {}) {
             if (store?.lat == null) { toast("먼저 매장 위치를 설정해 주세요"); return; }
             try { await api.attSetStore(store.lat, store.lng, Number(radius.value)); toast("반경을 저장했어요"); await load(); } catch (e) { toast(e.message, 5000); }
           } }, "저장"))),
-      h("section", { class: "card" }, h("h2", null, "직원별 근무 방식"),
+      h("section", { class: "sec stack" }, h("h2", { class: "sec-title" }, "직원별 근무 방식"),
         h("p", { class: "hint" }, "고정: 기준 출근·퇴근 시각 (늦으면 지각). 자유: 하루 근무시간만 정함 (출근 + 근무시간 = 예상 퇴근)."),
         emps.map((e) => h("div", { class: "empcard" },
           h("div", { class: "top2" }, h("b", null, e.display_name), h("span", { class: "muted" }, ROLE_KO[e.role] ?? e.role)),

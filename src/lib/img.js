@@ -300,21 +300,22 @@ export async function signedUrls(client, paths, opts) {
 /* ---------------- 큰 사진 보기 ---------------- */
 
 const CSS = `
-.pj-lightbox{position:fixed;inset:0;z-index:25;display:flex;flex-direction:column;background:rgba(0,0,0,.94);color:#fff;overscroll-behavior:contain;-webkit-user-select:none;user-select:none}
+.pj-lightbox{position:fixed;inset:0;z-index:25;display:flex;flex-direction:column;background:var(--ink);color:var(--white);overscroll-behavior:contain;-webkit-user-select:none;user-select:none}
 .pj-lightbox:focus{outline:none}
 .pj-lightbox [hidden]{display:none!important}
-.pj-lb-top{flex:none;display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top)) 12px 8px}
-.pj-lb-count{flex:none;min-width:3.6em;font-size:.85rem;opacity:.85}
-.pj-lb-name{flex:1;min-width:0;font-size:.8rem;opacity:.7;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pj-lb-btn{flex:none;display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;padding:0 14px;border:1px solid rgba(255,255,255,.35);border-radius:22px;background:rgba(255,255,255,.12);color:#fff;font-weight:700;font-size:.9rem;text-decoration:none;cursor:pointer}
-.pj-lb-btn:focus-visible,.pj-lb-nav:focus-visible{outline:2px solid #fff;outline-offset:2px}
-.pj-lb-btn[aria-disabled=true]{opacity:.4;pointer-events:none}
+.pj-lb-top{flex:none;display:flex;align-items:center;gap:8px;padding:calc(8px + env(safe-area-inset-top)) 12px 8px;border-bottom:1px solid var(--ink-hi)}
+.pj-lb-count{flex:none;min-width:3.6em;font-size:.85rem}
+.pj-lb-name{flex:1;min-width:0;font-size:.8rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pj-lb-btn{flex:none;display:inline-flex;align-items:center;justify-content:center;min-width:44px;min-height:44px;padding:0 14px;border:1px solid var(--white);border-radius:var(--r-pill);background:var(--ink-hi);color:var(--white);font-weight:700;font-size:.9rem;text-decoration:none;cursor:pointer}
+.pj-lb-btn:focus-visible,.pj-lb-nav:focus-visible{outline:2px solid var(--white);outline-offset:2px}
+.pj-lb-btn[aria-disabled=true]{background:transparent;border-color:var(--muted);color:var(--dim);pointer-events:none}
 .pj-lb-stage{position:relative;flex:1;min-height:0;display:flex;align-items:center;justify-content:center;overflow:hidden;touch-action:pan-y pinch-zoom;padding-bottom:env(safe-area-inset-bottom)}
 .pj-lb-img{display:none;max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain}
 .pj-lb-img.on{display:block}
-.pj-lb-msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);max-width:80%;text-align:center;font-size:.95rem;opacity:.9}
-.pj-lb-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:1;width:48px;height:72px;border:0;border-radius:12px;background:rgba(255,255,255,.14);color:#fff;font-size:2rem;line-height:1;cursor:pointer}
+.pj-lb-msg{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);max-width:80%;text-align:center;font-size:.95rem}
+.pj-lb-nav{position:absolute;top:50%;transform:translateY(-50%);z-index:1;width:48px;height:72px;border:1px solid var(--white);border-radius:var(--r-md);background:var(--ink-hi);color:var(--white);font-size:2rem;line-height:1;cursor:pointer}
 .pj-lb-nav.prev{left:6px}.pj-lb-nav.next{right:6px}
+@supports (background:color-mix(in srgb,red,blue)){.pj-lb-nav{background:color-mix(in srgb,var(--ink) 72%,transparent)}}
 `;
 
 // 이 파일이 쓰는 스타일을 한 번만 끼워 넣는다

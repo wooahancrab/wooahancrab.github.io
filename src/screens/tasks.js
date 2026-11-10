@@ -50,13 +50,13 @@ export async function renderTasks(root) {
     const late = data.open.filter((t) => t.due_date && t.due_date < data.today);
     const todayList = data.open.filter((t) => t.due_date === data.today);
     const rest = data.open.filter((t) => !late.includes(t) && !todayList.includes(t));
-    const sec = (title, list) => list.length > 0 && h("div", null, h("div", { class: "cat-title" }, title), h("div", { class: "list" }, list.map(card)));
+    const sec = (title, list) => list.length > 0 && h("div", null, h("div", { class: "cat-title" }, title), h("div", { class: "rowlist" }, list.map(card)));
     return h("div", { class: "page" },
       h("div", { class: "datebar" }, h("b", null, labelMD(data.today)), h("span", null, `남은 업무 ${data.open.length}건`)),
       !data.open.length && h("p", { class: "muted" }, "지시받은 업무가 없어요 👍"),
       sec("밀린 업무", late), sec("오늘 마감", todayList), sec("예정", rest),
-      data.done.length > 0 && h("div", null, h("div", { class: "cat-title" }, "최근 완료 (7일)"),
-        h("div", { class: "list" }, data.done.map((t) => h("div", { class: "rt done" },
+      data.done.length > 0 && h("div", null, h("h2", { class: "sec-title" }, "최근 완료 (7일)"),
+        h("div", { class: "rowlist" }, data.done.map((t) => h("div", { class: "rt done" },
           h("div", { class: "rt-main" }, h("div", { class: "rt-title" }, t.title), t.done_note && h("div", { class: "rt-sub" }, t.done_note)),
           h("div", { class: "rt-state" }, "✓ " + labelMD(dateOf(t.done_at))))))));
   }

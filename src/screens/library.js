@@ -49,7 +49,7 @@ export async function renderLibrary(root, opts = {}) {
     const stRow = h("div", { style: "display:none" }, st);
     aud.onchange = () => { stRow.style.display = aud.value === "store" && top ? "" : "none"; };
     file.onchange = () => { if (!title.value && file.files[0]) title.value = file.files[0].name.replace(/\.[^.]+$/, ""); };
-    const lbl = (t) => h("span", { class: "muted", style: "font-size:12px" }, t);
+    const lbl = (t) => h("span", { class: "lbl" }, t);
     for (;;) {
       if (!(await modal("파일 올리기", h("div", { class: "stack" }, lbl("파일 (20MB까지)"), file, lbl("이름"), title, lbl("폴더"), folderIn, dl, lbl("설명"), note, lbl("보는 사람"), aud, stRow), "올리기", "취소"))) return;
       const f = file.files[0];
@@ -76,22 +76,22 @@ export async function renderLibrary(root, opts = {}) {
       opts.onBack && h("button", { class: "linkbtn back", onclick: opts.onBack }, "← 목록"),
       h("h1", null, "📁 서식·자료함"),
       canUpload && h("button", { class: "btn primary", onclick: upload }, "⬆ 파일 올리기"),
-      !canUpload && h("p", { class: "muted", style: "font-size:12px" }, "파일을 열어 보거나 내려받을 수 있어요. 올리기는 관리자만 해요."),
+      !canUpload && h("p", { class: "muted" }, "파일을 열어 보거나 내려받을 수 있어요. 올리기는 관리자만 해요."),
       h("div", { class: "chips-bar", style: "margin:8px 0" }, [["all", "전체"], ...folders.map((x) => [x, x])].map(([k, l]) =>
         h("button", { class: "chip" + (folder === k ? " on" : ""), onclick: () => { folder = k; draw(); } }, l))),
       search,
       loading ? h("p", { class: "muted" }, "불러오는 중…")
         : err ? h("p", { class: "err" }, "불러오기 실패: " + err + " (library.sql 실행 여부 확인)")
         : !list.length ? h("p", { class: "muted" }, files.length ? "찾는 파일이 없어요" : "아직 올린 파일이 없어요")
-        : list.map((f) => h("div", { class: "card", style: "margin:8px 0;padding:12px;border:1px solid #ddd;border-radius:12px" },
+        : list.map((f) => h("div", { class: "card" },
           h("div", { style: "display:flex;justify-content:space-between;gap:8px" }, h("b", null, `${iconOf(f)} ${f.title}`),
             h("span", { class: "badge info" }, f.audience === "store" ? (f.stores?.display_name ?? f.stores?.name ?? AUD.store) : AUD[f.audience])),
-          h("div", { class: "muted", style: "font-size:12px" }, `${f.folder} · ${kb(f.size)} · ${f.uploaded_name} · ${labelMD(dateOf(f.created_at))}`),
-          f.note && h("div", { style: "margin-top:4px" }, f.note),
-          h("div", { style: "display:flex;gap:10px;margin-top:8px;flex-wrap:wrap" },
+          h("div", { class: "muted" }, `${f.folder} · ${kb(f.size)} · ${f.uploaded_name} · ${labelMD(dateOf(f.created_at))}`),
+          f.note && h("div", null, f.note),
+          h("div", { class: "toprow", style: "border-top:1px solid var(--line);padding-top:var(--s3)" },
             h("button", { class: "btn ghost slim", onclick: () => open(f) }, "열기"),
             h("button", { class: "btn ghost slim", onclick: () => open(f, true) }, "내려받기"),
-            (f.uploaded_by === prof.user_id || prof.role === "owner") && h("button", { class: "linkbtn", onclick: () => remove(f) }, "삭제"))))));
+            (f.uploaded_by === prof.user_id || prof.role === "owner") && h("button", { class: "linkbtn bad-text", style: "grid-column:1/-1", onclick: () => remove(f) }, "삭제"))))));
     scrollTo(0, y);
   }
   draw();

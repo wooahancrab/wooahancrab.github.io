@@ -12,7 +12,7 @@ export async function openPushCheck() {
 
   const row = (ok, text, hint) => h("div", { style: "margin:6px 0" },
     h("div", { class: ok ? "ok-text" : "err" }, (ok ? "✅ " : "❌ ") + text),
-    !ok && hint && h("div", { class: "muted", style: "font-size:12px;margin-left:22px" }, hint));
+    !ok && hint && h("div", { class: "muted", style: "margin-left:22px" }, hint));
 
   async function draw(testMsg) {
     body.replaceChildren(h("p", { class: "muted" }, "확인하는 중…"));
@@ -44,7 +44,7 @@ export async function openPushCheck() {
             draw({ text: r.sent > 0 ? `시험 알림을 ${r.sent}대에 보냈어요. 몇 초 안에 알림이 오면 정상이에요.` : "서버가 보낼 기기를 찾지 못했어요. [알림 다시 켜기]를 눌러 보세요.", err: !(r.sent > 0) });
           } catch (e) { busy = false; draw({ text: "시험 알림을 보내지 못했어요: " + e.message, err: true }); }
         } }, "시험 알림 보내기")),
-      ready && h("p", { class: "muted", style: "font-size:12px" }, "시험 알림이 안 오면: 폰의 방해금지·절전 모드를 끄고, 크롬(또는 설치한 앱)의 알림이 켜져 있는지 확인하세요."));
+      ready && h("p", { class: "muted" }, "시험 알림이 안 오면: 폰의 방해금지·절전 모드를 끄고, 크롬(또는 설치한 앱)의 알림이 켜져 있는지 확인하세요."));
   }
   await draw();
 }

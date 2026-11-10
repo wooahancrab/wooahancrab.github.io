@@ -65,9 +65,9 @@ export async function renderClaims(root) {
       c.status === "done"
         ? h("p", { class: "muted" }, `${c.resolved_by_name} 해결 · ${labelMD(dateOf(c.resolved_at))} ${fmtHM(c.resolved_at)}`)
         : h("div", { class: "acc-btns" },
-            h("button", { class: "btn ghost slim", onclick: () => addNote(c) }, "경과 메모"),
+            h("button", { class: "btn weak slim", onclick: () => addNote(c) }, "경과 메모"),
             data.can_manage && c.status === "open" && h("button", { class: "btn ghost slim", onclick: () => setStatus(c, "working") }, "처리 시작"),
-            data.can_manage && h("button", { class: "btn primary slim", onclick: () => setStatus(c, "done") }, "해결 완료")));
+            data.can_manage && h("button", { class: "btn ghost slim", onclick: () => setStatus(c, "done") }, "해결 완료")));
   }
 
   function view() {

@@ -263,7 +263,7 @@ export async function renderAiTask(root, opts = {}) {
     for (const e of st.sent) {
       const meta = `${e.due_date ? "마감 " + labelMD(e.due_date) : ""}${e.repeat !== "none" ? (e.due_date ? " · " : "") + REPEAT_KO[e.repeat] + " 반복" : ""}`;
       for (const p of e.people) {
-        out.push(h("div", { class: "item col static", style: p.canceled ? "opacity:.55" : "" },
+        out.push(h("div", { class: "item col static", style: p.canceled ? "background:var(--soft)" : "" },
           h("b", { style: p.canceled ? "text-decoration:line-through" : "" }, `${p.canceled ? "↩" : "✅"} ${p.t.display_name} · ${e.title}`),
           meta && h("span", { class: "muted" }, meta),
           !p.canceled && p.id && h("button", { type: "button", class: "btn ghost slim danger", disabled: !!p.busy, onclick: () => undoOne(p) }, p.busy ? "취소하는 중…" : "지시 취소")));
@@ -304,12 +304,12 @@ export async function renderAiTask(root, opts = {}) {
   }
 
   function errBox() {
-    return h("div", { class: "banner", role: "alert", style: "flex-direction:column;align-items:stretch;gap:6px;background:#fdeeea;border-color:#f0c4bb" },
+    return h("div", { class: "banner alert", role: "alert", style: "flex-direction:column;align-items:stretch;gap:6px" },
       h("b", { class: "err" }, "해석하지 못했어요"),
       h("span", null, st.err.text),
       h("span", { class: "muted" }, hintManual()),
       h("div", { class: "acc-btns" },
-        h("button", { type: "button", class: "btn primary slim", disabled: st.busy, onclick: parse }, "다시 시도"),
+        h("button", { type: "button", class: "btn ghost slim", disabled: st.busy, onclick: parse }, "다시 시도"),
         manualBtn("btn ghost slim")));
   }
 
@@ -555,7 +555,7 @@ export async function renderAiTask(root, opts = {}) {
 
     // 묶음 지시의 받는 사람이 바뀌면 '모두 확인했어요' 체크는 다시 받는다
     const setInc = (r, on) => { r.include = on; if (r.via === "group") st.groupOk = false; paintWho(); };
-    const removedRow = (r) => h("div", { class: "entry", style: "opacity:.65;flex-direction:row;align-items:center;justify-content:space-between" },
+    const removedRow = (r) => h("div", { class: "entry", style: "background:var(--soft);flex-direction:row;align-items:center;justify-content:space-between" },
       h("span", { class: "muted" }, `${rowLabel(r)} — 뺐어요`),
       h("button", { type: "button", class: "linkbtn", onclick: () => setInc(r, true) }, "다시 넣기"));
     const dropBtn = (r) => h("button", { type: "button", class: "linkbtn", style: "white-space:nowrap", onclick: () => setInc(r, false) }, "빼기");
@@ -582,7 +582,7 @@ export async function renderAiTask(root, opts = {}) {
           sel,
           r.chosen ? dupNote(chosenOf(r)) : h("span", { class: "hint" }, "이름이 비슷한 사람이 여럿이라 직접 골라야 해요."));
       }
-      return h("div", { class: "entry", style: "border-color:var(--bad);background:#fdeeea" },
+      return h("div", { class: "entry", style: "border-color:var(--bad);background:var(--bad-bg)" },
         h("div", { style: "display:flex;justify-content:space-between;align-items:center;gap:8px" },
           h("b", { class: "err" }, st.isTop ? `‘${r.mention}’ — 찾지 못했어요` : `‘${r.mention}’ — 내 담당 직원이 아니에요`), dropBtn(r)),
         h("span", { class: "hint" }, st.isTop
@@ -688,7 +688,7 @@ export async function renderAiTask(root, opts = {}) {
         h("p", { style: "margin:0;font-weight:600" }, res.understood || "(설명이 없어요)"),
         h("p", { class: "hint", style: "white-space:pre-wrap;word-break:break-word" }, "내가 쓴 말: " + clip(st.text.trim(), 200)),
         h("p", { class: "hint" }, "AI는 틀릴 수 있어요. 담당자·날짜·반복을 눈으로 확인하고 [지시하기]를 눌러야 저장돼요.")),
-      res.warnings.length > 0 && h("div", { class: "banner", role: "alert", style: "flex-direction:column;align-items:stretch;gap:4px;background:#fdeeea;border-color:#f0c4bb" },
+      res.warnings.length > 0 && h("div", { class: "banner alert", role: "alert", style: "flex-direction:column;align-items:stretch;gap:4px" },
         h("b", { class: "err" }, "해석할 때 알려 준 점"),
         res.warnings.map((w) => h("span", { class: "err" }, "⚠ " + w))),
       h("section", { class: "card" },
