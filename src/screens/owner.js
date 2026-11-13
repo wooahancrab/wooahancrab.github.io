@@ -376,5 +376,5 @@ export async function renderOwner(root, ctx, opts = {}) {
   // 푸시 알림에서 열린 경우 ?d=날짜 상세로
   await load();
   const q = new URLSearchParams(location.search).get("d");
-  if (q) { detail = { date: q, r: byDate()[q] }; draw(); }
+  if (q) { detail = { date: q, r: byDate()[q] }; if (!showRecon) draw(); } // 매출-입금 대조를 보는 중이면 다시 그려서 입력을 지우지 않는다
 }

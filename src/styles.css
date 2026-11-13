@@ -177,3 +177,11 @@ ul.plain{margin:0;padding-left:1.1em}.plain-pre{white-space:pre-line;margin:0}
 .rc-day.blank{border-color:transparent;background:none;cursor:default}
 .rc-day.done{background:var(--ok-bg);border-color:var(--ok)}.rc-day.pending{border-style:dashed}
 .rc-day.missing{background:var(--bad-bg);border-color:var(--bad);color:var(--bad)}.rc-day.sel{outline:3px solid var(--ink);outline-offset:1px}
+/* 누락 건 한 줄 → 눌러서 펼치는 상세 */
+.rc-miss-head{display:flex;flex-direction:column;align-items:stretch;gap:6px;width:100%;padding:var(--s3) var(--s4);background:transparent;border:0;border-radius:0;text-align:left;color:var(--ink);cursor:pointer}
+.rc-miss-head:active{background:var(--tint)}
+.rc-caret{font-weight:700;color:var(--muted);padding-left:4px}.rc-miss-head .rc-row1{flex-wrap:wrap}.rc-miss-head .rc-row1>b{white-space:nowrap}
+.rc-detail{display:flex;flex-direction:column;gap:var(--s4);padding:var(--s3) var(--s4) var(--s4);background:var(--soft);border-top:1px solid var(--line)}
+.rc-h{margin:0 0 var(--s2);padding-bottom:4px;border-bottom:1px solid var(--line);font-size:.95rem;line-height:1.4}
+.rc-cause{margin:0;font-weight:700;color:var(--bad)}
+.rc-detail .entry{background:var(--card)}.rc-detail .btn{margin:var(--s2) 0 0}

@@ -73,6 +73,7 @@ function cleanDeps(deps) {
     saleDate: isoOk(d.saleDate) ? d.saleDate : null,
     fee: Number.isFinite(d.fee) && d.fee >= 0 ? Math.round(d.fee) : null,
     method: METHOD_LABEL[d.method] ? d.method : (inferMethod(d.payer) ?? "etc"),
+    linked: d.linked === true, // 사람이 눌러서 매출에 연결한 입금(saleDate 를 지정한 것과 같게 처리)
   }));
 }
 const daysOf = (st, m) => { const v = st.days?.[m]; return Number.isFinite(v) && v >= 0 ? Math.round(v) : (st.defaultDays ?? DEFAULT_DAYS); };
@@ -82,10 +83,10 @@ const daysOf = (st, m) => { const v = st.days?.[m]; return Number.isFinite(v) &&
  * cutoff: 이 날짜까지 들어온 입금만 쓴다. 반환: 매출일별 배정과 남은 입금.
  * item: { date, amount, remaining, net, fee, explicit(true면 매출일 지정 입금이 채운 몫 있음), est(true면 FIFO 추정 몫 있음) }
  */
-function allocate(saleDays, opening, deps, rate, cutoff) {
+function allocate(saleDays, opening, deps, rate, cutoff, from) {
   const items = [];
-  if (opening > 0) items.push({ date: "0000-00-00", amount: opening, remaining: opening, net: 0, fee: 0, opening: true, explicit: false, est: false });
-  for (const s of saleDays) items.push({ date: s.date, amount: s.amount, remaining: s.amount, net: 0, fee: 0, opening: false, explicit: false, est: false });
+  if (opening > 0) items.push({ date: "0000-00-00", amount: opening, remaining: opening, net: 0, fee: 0, opening: true, explicit: false, est: false, parts: [] });
+  for (const s of saleDays) items.push({ date: s.date, amount: s.amount, remaining: s.amount, net: 0, fee: 0, opening: false, explicit: false, est: false, parts: [] });
   const byDate = new Map(items.filter((x) => !x.opening).map((x) => [x.date, x]));
   const ds = deps.filter((d) => d.date <= cutoff).map((d) => {
     const feeKnown = d.fee != null;
@@ -96,14 +97,19 @@ function allocate(saleDays, opening, deps, rate, cutoff) {
     const feePart = take === dep.left ? dep.leftFee : Math.max(0, Math.min(dep.leftFee, Math.round(dep.fee * take / dep.gross)));
     item.remaining -= take; item.net += take - feePart; item.fee += feePart;
     if (est) item.est = true; else item.explicit = true;
+    // 이 매출에 배정된 입금의 내역(상세·내역서용). mode: explicit=매출일로 정확히 연결, manual=사람이 눌러 연결, fifo=오래된 매출부터 채운 추정
+    item.parts.push({ idx: dep.idx, date: dep.date, payer: dep.payer, net: take - feePart, fee: feePart, mode: est ? "fifo" : dep.linked ? "manual" : "explicit", feeSource: dep.feeSource });
     dep.left -= take; dep.leftFee -= feePart;
   };
-  const order = ds.slice().sort((a, b) => a.date.localeCompare(b.date) || a.idx - b.idx); // 입력 행 순서와 상관없이 같은 결과
+  // 같은 날 입금은 (매출일, 금액 큰 것, 입력 순서)로 정해 입력 행 순서와 상관없이 같은 결과가 나오게 한다
+  const order = ds.slice().sort((a, b) => a.date.localeCompare(b.date) || String(a.saleDate ?? "").localeCompare(String(b.saleDate ?? "")) || b.amount - a.amount || a.idx - b.idx);
   // ① 매출일이 적힌 입금은 그 매출에 먼저 채운다(매출일이 입금일보다 늦으면 못 채움)
   for (const dep of order) {
     if (!dep.saleDate) continue;
     const it = byDate.get(dep.saleDate);
     if (it && it.remaining > 0 && dep.left > 0 && it.date <= dep.date) give(dep, it, Math.min(dep.left, it.remaining), false);
+    // 매출일이 분석 시작 전으로 적혀 있고 자료에 그 매출이 없으면 이월(시작 전 미수) 몫을 먼저 채운다 — 매출일 없는 입금이 이월을 가로채지 못하게
+    else if (!it && from && dep.saleDate < from && opening > 0 && items[0].opening && items[0].remaining > 0 && dep.left > 0) give(dep, items[0], Math.min(dep.left, items[0].remaining), false);
   }
   // ② 나머지는 오래된 매출부터(FIFO). 매출일이 적힌 입금은 구간 안 다른 매출을 채우지 않는다 — 이월(분석 시작 전 매출) 몫만 채우고 남으면 '짝 없는 입금'
   for (const dep of order) {
@@ -118,6 +124,63 @@ function allocate(saleDays, opening, deps, rate, cutoff) {
   return { items, deps: ds, leftover: ds.filter((d) => d.left > 0) };
 }
 
+/* ---------------- 누락 건 원인·후보 ---------------- */
+export const FEE_OVERRUN_MAX = 0.10; // 실효 수수료율이 계약보다 이만큼(10%p)까지만 높으면 '수수료가 더 떼였다'고 본다. 그보다 크면 일부 누락
+/** 기한이 지난 안 맞는 매출의 원인 추정: over=초과 입금 / none=입금 자체가 없음 / fee_high=수수료가 계약보다 많이 떼임(계약율 역산 입금일 때) / partial=일부만 들어옴 */
+function causeOf(row, rate, tol) {
+  if (row.diff < -tol) return { code: "over", amount: -row.diff };
+  if (row.paid === 0) return { code: "none", amount: row.diff };
+  const implied = 1 - row.net / row.amount;
+  const derived = row.parts.length > 0 && row.parts.every((p) => p.feeSource === "contract");
+  if (rate > 0 && derived && implied > rate + 0.0005 && implied - rate <= FEE_OVERRUN_MAX) return { code: "fee_high", amount: row.diff, impliedFee: implied, contract: rate };
+  return { code: "partial", amount: row.diff, noFeeInfo: row.parts.some((p) => p.feeSource === "none") };
+}
+/**
+ * 짝 없는 입금(analyze().unmatchedDeposits) 중 이 매출 것일 수 있는 후보. 사람이 눌러서 연결한다.
+ * 조건: 매출일 이후에 들어왔고, (금액이 부족액·매출액·수수료 뺀 예상 입금액 중 하나와 ±5% 이내)이거나 (같은 결제수단이고 입금 기한 앞뒤 3일 안).
+ */
+export function candidatesFor(row, unmatched, opts = {}) {
+  const pct = opts.pct ?? 0.05, win = opts.days ?? 3, rate = row.contract ?? 0;
+  const targets = [row.diff, row.amount, ...(rate > 0 ? [Math.round(row.amount * (1 - rate))] : [])].filter((t) => t > 0);
+  const out = [];
+  for (const d of unmatched ?? []) {
+    if (d.date < row.date) continue; // 매출보다 먼저 들어온 입금은 그 매출 것이 될 수 없다
+    if (d.used || d.linked) continue; // 일부가 다른 매출에 쓰인 입금·이미 연결한 입금은 통째로 옮기면 다른 매출이 깨지므로 후보로 안 낸다
+    const gap = targets.length ? Math.min(...targets.map((t) => Math.abs(d.amount - t) / t)) : Infinity;
+    const amountHit = gap <= pct, dueGap = Math.abs(daysBetween(row.due, d.date)), dateHit = dueGap <= win, sameMethod = d.method === row.method;
+    if (!(amountHit || (dateHit && sameMethod))) continue; // 다른 결제수단의 입금은 금액이 비슷할 때만
+    out.push({ ...d, amountHit, dateHit, sameMethod, dueGap, score: (amountHit ? 2 : 0) + (dateHit ? 1 : 0) + (sameMethod ? 1 : 0), gap });
+  }
+  return out.sort((a, b) => Number(b.sameMethod) - Number(a.sameMethod) || b.score - a.score || a.gap - b.gap || a.dueGap - b.dueGap || a.idx - b.idx).slice(0, opts.max ?? 8); // 같은 결제수단 먼저
+}
+
+/* ---------------- 누락 건 상세(화면·인쇄·엑셀 공통) ---------------- */
+export const CAUSE_KO = { none: "입금 자체가 없음", partial: "일부만 들어옴", fee_high: "수수료가 계약보다 많음", over: "초과 입금" };
+export const MODE_KO = { explicit: "매출일로 정확히 연결", manual: "직접 연결(사람이 선택)", fifo: "오래된 매출부터 채운 추정" };
+export const STATUS_KEYS = ["pre", "asking", "done"];
+/** 처리 상태 이름. 가운데 상태는 결제수단에 맞춰 '카드사 문의 중' 등으로 보인다 */
+export function statusLabel(status, method) {
+  if (status === "done") return "확인 완료";
+  if (status === "asking") return { card: "카드사 문의 중", delivery: "배달앱 문의 중", smartstore: "스마트스토어 문의 중" }[method] ?? "문의 중";
+  return "확인 전";
+}
+export const noteKey = (row) => `${row.date}|${row.method}`;
+/** 누락 점검표 한 건의 상세: 그날 매출·배정된 입금·차이와 원인·후보 입금·메모/처리 상태. notes = { 'YYYY-MM-DD|method': { status, memo } } */
+export function buildDetail(row, res, notes = {}) {
+  const n = notes[noteKey(row)] ?? {};
+  const status = STATUS_KEYS.includes(n.status) ? n.status : "pre";
+  return {
+    key: noteKey(row), date: row.date, method: row.method, amount: row.amount, days: row.days, due: row.due,
+    lateDays: Math.max(0, daysBetween(row.due, res.asOf)),
+    state: row.state, diff: row.diff, paid: row.paid, net: row.net, fee: row.fee, contract: row.contract,
+    cause: row.cause ? { ...row.cause, text: CAUSE_KO[row.cause.code] } : null,
+    parts: row.parts.map((p) => ({ ...p, gross: p.net + p.fee, modeText: MODE_KO[p.mode] })),
+    estimated: row.parts.some((p) => p.mode === "fifo"),
+    candidates: candidatesFor(row, res.unmatchedDeposits).map((c) => ({ ...c, net: c.amount - (c.fee ?? 0) })),
+    status, statusText: statusLabel(status, row.method), memo: String(n.memo ?? ""),
+  };
+}
+
 /* ---------------- 분석 ---------------- */
 /**
  * input: { sales:[{date,method,amount}], deposits:[{date,payer,amount,saleDate?,fee?,method?}] }
@@ -129,22 +192,34 @@ export function analyze(input, st) {
   // 분석 범위는 설정(정산일수의 최댓값)으로 정한다 — 자료에 따라 범위가 달라지지 않게
   const maxDays = Math.max(DEFAULT_DAYS, st.defaultDays ?? 0, ...Object.values(st.days ?? {}).filter(Number.isFinite));
   const per = periodOf(month, maxDays, mode, holidays);
-  const sales = allSales.filter((s) => s.date >= per.from && s.date <= per.monthTo && s.date <= asOf), deps = allDeps.filter((d) => d.date >= per.from && d.date <= per.depositsTo);
+  // 원장(미수금 계산)에는 분석 시작 전 자료도 모두 쓴다: 시작 전 매출의 입금이 '짝 없는 입금'으로 남아 미수금을 깎지 않고, 전월 말 미수금이 정확해진다.
+  // 화면에 보이는 행·누락 점검표·타임라인은 분석 구간(per.from ~)만이다.
+  const sales = allSales.filter((s) => s.date <= per.monthTo && s.date <= asOf), deps = allDeps.filter((d) => d.date <= per.depositsTo);
   const methods = METHODS.map(([k]) => k).filter((k) => sales.some((s) => s.method === k) || deps.some((d) => d.method === k) || (st.opening?.[k] ?? 0) > 0);
   const T = asOf < per.monthTo ? asOf : per.monthTo;          // 이번 달 말(진행 중인 달이면 기준일)
   const prevEnd = addDays(per.monthFrom, -1) < asOf ? addDays(per.monthFrom, -1) : asOf; // 기준일이 전월 말보다 이르면 기준일
   const out = { asOf, month, mode, period: per, methods: [], rows: [], missing: [], days: [], feeRates: [], unmatchedDeposits: [], summary: null };
   const sum = (a, f) => a.reduce((s, x) => s + f(x), 0);
 
-  const sm = { sales: 0, net: 0, fee: 0, arPrev: 0, arEnd: 0, nextExpected: 0, nextExpectedNet: 0, overdueAtEnd: 0 };
+  const sm = { sales: 0, net: 0, fee: 0, arPrev: 0, arEnd: 0, nextExpected: 0, nextExpectedNet: 0, overdueAtEnd: 0, overduePre: 0, orphanPrev: 0, orphanEnd: 0, openingTotal: 0, openingAuto: 0 };
   for (const m of methods) {
-    const N = daysOf(st, m), rate = st.contractFee?.[m] > 0 && st.contractFee[m] < 1 ? st.contractFee[m] : 0, opening = Math.max(0, Math.round(st.opening?.[m] ?? 0));
+    const N = daysOf(st, m), rate = st.contractFee?.[m] > 0 && st.contractFee[m] < 1 ? st.contractFee[m] : 0, userOpening = Math.max(0, Math.round(st.opening?.[m] ?? 0));
     const mSales = sales.filter((s) => s.method === m);
     const byDay = new Map();
     for (const s of mSales) byDay.set(s.date, (byDay.get(s.date) ?? 0) + s.amount);
     const saleDays = [...byDay].map(([date, amount]) => ({ date, amount })).sort((a, b) => a.date.localeCompare(b.date));
     const mDeps = deps.filter((d) => d.method === m);
-    const cut = (c) => allocate(saleDays, opening, mDeps, rate, c);
+    // 이월 미수금: 대표가 넣었으면 그 값. 안 넣었으면, 매출일이 분석 시작 전으로 적혀 있는데 짝이 되는 매출이 자료에 없는 입금을 모아 자동으로 잡는다
+    // (그 입금은 시작 전 매출이 전월 말에도 못 받은 돈이었다는 뜻이라 이월로 잡아야 '입금 = 전월 말 미수 + 매출 − 월말 미수 − 수수료'가 맞는다)
+    let openingAuto = 0;
+    {
+      const saleDates = new Set(saleDays.map((s) => s.date));
+      const probe = allocate(saleDays, userOpening, mDeps, rate, asOf, per.from);
+      // 자료에 그 매출이 없는 입금만(있는데 초과 입금한 것은 짝 없는 입금으로 남긴다)
+      openingAuto = sum(probe.leftover.filter((d) => d.saleDate && d.saleDate < per.from && !saleDates.has(d.saleDate)), (d) => d.left);
+    }
+    const opening = userOpening + openingAuto; // 직접 넣은 이월 + 자동 이월(직접 넣은 이월로 못 채운 시작 전 매출의 입금)
+    const cut = (c) => allocate(saleDays, opening, mDeps, rate, c, per.from);
 
     // 기준일 시점
     const A = cut(asOf);
@@ -157,11 +232,13 @@ export function analyze(input, st) {
       let state;
       if (confirmed) state = Math.abs(diff) <= tol ? "done" : diff > 0 ? "missing" : "over";
       else state = paid === 0 ? "waiting" : Math.abs(diff) <= tol ? "early" : "partial";
-      const row = { date: it.date, method: m, amount: it.amount, due, confirmed, net: it.net, fee: it.fee, paid, diff, state, est: it.est, explicit: it.explicit };
+      if (it.date < per.from) continue; // 분석 시작 전 매출: 미수금 계산에만 쓰고 표에는 안 보인다(못 받은 돈은 아래 overduePre 로 알린다)
+      const row = { date: it.date, method: m, amount: it.amount, due, confirmed, net: it.net, fee: it.fee, paid, diff, state, est: it.est, explicit: it.explicit, parts: it.parts, contract: rate || null, days: N };
+      if (state === "missing" || state === "over") { row.cause = causeOf(row, rate, tol); out.missing.push(row); }
       out.rows.push(row);
-      if (state === "missing" || state === "over") out.missing.push(row);
     }
-    out.unmatchedDeposits.push(...A.leftover.map((d) => ({ date: d.date, payer: d.payer, method: m, amount: d.left, idx: d.idx })));
+    // 짝 없는 입금: 기준일(월말)까지 들어왔고 다음 달 매출을 가리키지 않는 것만. used=일부가 다른 매출에 쓰인 입금의 남은 몫, linked=사람이 연결한 입금
+    out.unmatchedDeposits.push(...A.leftover.filter((d) => d.date <= T && (!d.saleDate || d.saleDate <= per.monthTo)).map((d) => ({ date: d.date, payer: d.payer, method: m, amount: d.left, fee: d.leftFee, idx: d.idx, saleDate: d.saleDate, used: d.left < d.gross, linked: !!d.linked })));
     const confRows = out.rows.filter((r) => r.method === m && r.confirmed);
     const salesConf = sum(confRows, (r) => r.amount), netConf = sum(confRows, (r) => r.net), feeConf = sum(confRows, (r) => r.fee);
     // 수수료율 = (매출 − 입금) ÷ 매출, 완료 구간만. rateClean 은 누락·초과로 걸린 날을 뺀 값(누락이 섞여 부풀려지는 것을 가려 보려고)
@@ -172,22 +249,26 @@ export function analyze(input, st) {
 
     // 월말 시점(전월 말·이번 달 말 미수금)
     const Tcut = cut(T), Pcut = cut(prevEnd);
-    const arOf = (c, upto) => c.items.filter((x) => x.opening || x.date <= upto).reduce((s, x) => s + x.remaining, 0) - c.leftover.filter((d) => d.date <= upto).reduce((s, d) => s + d.left, 0);
-    // 미수금 = 이월 + 누적 매출 − 누적 (입금+수수료): 초과 입금은 음수로 상쇄된다
-    const arPrev = arOf(Pcut, prevEnd), arEnd = arOf(Tcut, T);
+    // 미수금 = 아직 못 받은 매출의 합(이월 포함). 짝 없는 입금(연결 안 된 입금)은 미수금에서 빼지 않고 따로 보여 준다 — 빼 버리면 미수금이 실제보다 작거나 음수로 보여서
+    // (검산식에는 '짝 없는 입금 증가분'으로 들어간다: 입금 = 전월 말 미수 + 매출 − 월말 미수 − 수수료 + 짝 없는 입금 증가분)
+    const arOf = (c, upto) => c.items.filter((x) => x.opening || x.date <= upto).reduce((s, x) => s + x.remaining, 0);
+    const orphanOf = (c, upto) => c.leftover.filter((d) => d.date <= upto).reduce((s, d) => s + d.left, 0);
+    const arPrev = arOf(Pcut, prevEnd), arEnd = arOf(Tcut, T), orphanPrev = orphanOf(Pcut, prevEnd);
     const inMonthDeps = Tcut.deps.filter((d) => d.date >= per.monthFrom && d.date <= T);
     const net = sum(inMonthDeps, (d) => d.amount), fee = sum(inMonthDeps, (d) => d.fee);
     const salesM = sum(mSales.filter((s) => s.date >= per.monthFrom && s.date <= T), (s) => s.amount);
     // 기준일(T) 시점에 못 받은 매출: 기한이 T 이하면 '기한 경과 미수', 기한이 T 뒤이고 월말 매출의 기한 안이면 '입금 예정'. 허용오차 이하 잔액은 0으로 본다
     const winTo = settleDate(per.monthTo, N, mode, holidays);
-    let nextExpected = 0, nextExpectedNet = 0, overdueAtEnd = 0;
+    let nextExpected = 0, nextExpectedNet = 0, overdueAtEnd = 0, overduePre = 0;
     for (const it of Tcut.items) {
       if (it.opening || it.remaining <= tol) continue;
       const due = settleDate(it.date, N, mode, holidays);
-      if (due <= T) overdueAtEnd += it.remaining;
+      if (due <= T) { overdueAtEnd += it.remaining; if (it.date < per.from) overduePre += it.remaining; }
       else if (due <= winTo) { nextExpected += it.remaining; nextExpectedNet += rate > 0 ? it.remaining - Math.round(it.remaining * rate) : it.remaining; }
     }
-    out.methods.push({ method: m, days: N, contractFee: rate || null, opening, salesMonth: salesM, netMonth: net, feeMonth: fee, arPrev, arEnd, nextExpected, nextExpectedNet, overdueAtEnd });
+    const orphanEnd = orphanOf(Tcut, T); // 짝 없는 입금(입금+수수료): 미수금에는 반영하지 않은 입금
+    out.methods.push({ method: m, days: N, contractFee: rate || null, opening, openingAuto, salesMonth: salesM, netMonth: net, feeMonth: fee, arPrev, arEnd, nextExpected, nextExpectedNet, overdueAtEnd, overduePre, orphanPrev, orphanEnd });
+    sm.overduePre += overduePre; sm.orphanEnd += orphanEnd; sm.orphanPrev += orphanPrev; sm.openingTotal += opening; sm.openingAuto += openingAuto;
     sm.sales += salesM; sm.net += net; sm.fee += fee; sm.arPrev += arPrev; sm.arEnd += arEnd; sm.nextExpected += nextExpected; sm.nextExpectedNet += nextExpectedNet; sm.overdueAtEnd += overdueAtEnd;
   }
 
@@ -204,7 +285,15 @@ export function analyze(input, st) {
   }
   out.days = [...dayMap.values()].sort((a, b) => a.date.localeCompare(b.date)).map((d) => ({ ...d, band: d.bad ? "missing" : d.confirmed ? "done" : "pending", diff: d.sales - d.paid }));
   out.missing.sort((a, b) => a.date.localeCompare(b.date) || a.method.localeCompare(b.method));
-  out.summary = { ...sm, T, prevEnd, formulaOk: sm.net === sm.arPrev + sm.sales - sm.arEnd - sm.fee };
+  out.summary = { ...sm, T, prevEnd, orphanDelta: sm.orphanEnd - sm.orphanPrev, formulaOk: sm.net === sm.arPrev + sm.sales - sm.arEnd - sm.fee + (sm.orphanEnd - sm.orphanPrev) };
+  // 경고: 짝 없는 입금이 남음(미수금에 반영 안 됨) / 짝 없는 입금이 미수금보다 큼 / 분석 시작 전 매출 중 못 받은 돈 / 이월을 자동으로 잡음
+  out.warnings = [];
+  const orphans = out.unmatchedDeposits;
+  if (orphans.length) out.warnings.push({ code: "orphan", n: orphans.length, amount: sum(orphans, (d) => d.amount) });
+  const over = out.methods.filter((x) => x.orphanEnd > x.arEnd);
+  if (over.length) out.warnings.push({ code: "orphanBig", methods: over.map((x) => x.method), amount: sum(over, (x) => x.orphanEnd - x.arEnd) });
+  if (sm.overduePre > 0) out.warnings.push({ code: "pre", amount: sm.overduePre });
+  if (sm.openingAuto > 0) out.warnings.push({ code: "autoOpening", amount: sm.openingAuto, methods: out.methods.filter((x) => x.openingAuto > 0).map((x) => x.method) });
   return out;
 }
 
