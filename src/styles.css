@@ -160,3 +160,20 @@ ul.plain{margin:0;padding-left:1.1em}.plain-pre{white-space:pre-line;margin:0}
 .btn.ghost:active,.btn.danger:active,.btn.weak:active,.segbtn:not(.on):active,.chip:not(.on):active,.daychip:not(.on):active,.stepper button:active,.item:not(.static):active,.oitem:not(.miss):active,.scard:active,.bigtoggle:not(.on):active,.x:active,.pw-eye:active{background:var(--tint)}
 .tab:not(.on):active,.linkbtn:active{background:var(--tint)}
 @media (hover:hover){.item:not(.static):hover,.scard:hover,.btn.ghost:hover{background:var(--soft)}.tab:not(.on):hover{color:var(--ink)}}
+/* ── 14. 매출-입금 대조(recon18): 요약 칸·3열 숫자·일별 달력 ── */
+.rc-bar{display:flex;align-items:center;justify-content:space-between;gap:var(--s2)}.rc-bar .btn{width:56px;margin:0;padding:0}.rc-month{font-size:1.15rem}
+.rc-grid{display:grid;grid-template-columns:1fr 1fr;gap:var(--s2)}
+.rc-stat{display:flex;flex-direction:column;gap:2px;min-width:0;padding:var(--s3) 14px;background:var(--card);border:1px solid var(--line);border-radius:var(--r-md)}
+.rc-stat .k,.rc-stat .s{font-size:.8rem;color:var(--muted);line-height:1.35}
+.rc-stat .v{font-size:clamp(1.1rem,5.4vw,1.4rem);font-weight:700;line-height:1.3;font-variant-numeric:tabular-nums;white-space:nowrap}
+.rc-stat.warn{border-color:var(--bad);box-shadow:inset 4px 0 0 var(--bad)}.rc-stat.warn .v{color:var(--bad)}
+.rc-cols{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--s2);width:100%;text-align:right}.rc-cols>span:first-child{text-align:left}.rc-cols b{font-variant-numeric:tabular-nums;white-space:nowrap}@media (max-width:400px){.rc-cols{gap:4px}.rc-cols b{font-size:.9rem}}
+.rc-row1{display:flex;justify-content:space-between;align-items:center;gap:var(--s2);width:100%}
+.rc-legend{display:flex;flex-wrap:wrap;gap:var(--s2)}.rc-key{font-size:.8rem;font-weight:700;padding:2px 10px;border-radius:var(--r-pill);border:1px solid var(--line-ctl);background:var(--card)}
+.rc-key.done{background:var(--ok-bg);border-color:var(--ok);color:var(--ok)}.rc-key.missing{background:var(--bad-bg);border-color:var(--bad);color:var(--bad)}
+.rc-wd,.rc-days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:2px}.rc-wd{font-size:.8rem;color:var(--muted);text-align:center}
+.rc-day{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:48px;padding:2px 0;border:1px solid var(--line-ctl);border-radius:var(--r-sm);background:var(--card);color:var(--ink);cursor:pointer;line-height:1.15}
+.rc-day .n{font-size:.8rem}.rc-day .m{font-weight:700;font-size:1rem}.banner.plain{background:var(--soft);border-color:var(--line)}
+.rc-day.blank{border-color:transparent;background:none;cursor:default}
+.rc-day.done{background:var(--ok-bg);border-color:var(--ok)}.rc-day.pending{border-style:dashed}
+.rc-day.missing{background:var(--bad-bg);border-color:var(--bad);color:var(--bad)}.rc-day.sel{outline:3px solid var(--ink);outline-offset:1px}

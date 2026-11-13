@@ -88,6 +88,7 @@ const demo = {
   ...claimsDemo,
   async stRecv() { return LS.get("woo_demo_recv", []); },
   async stDeps() { return LS.get("woo_demo_deps", []); },
+  async recon18Deps() { return LS.get("woo_demo_deps", []); },
   async stWds() { return []; },
   async stRules() { return []; },
   async stSetRule() {},
@@ -339,6 +340,12 @@ const remote = {
     const { data, error } = await (await sb()).from("bank_deposits").select("id,dep_date,amount,memo").eq("store_id", await this.storeId()).order("dep_date");
     if (error) throw error;
     return data.map((d) => ({ id: d.id, date: d.dep_date, amount: d.amount, memo: d.memo }));
+  },
+  // 매출-입금 대조(대표·부대표·회장 전용): 서버 함수(recon18.sql)가 역할을 확인한 뒤에만 입금을 돌려준다. 권한이 없으면 오류.
+  async recon18Deps(from, to) {
+    const { data, error } = await (await sb()).rpc("recon18_deposits", { p_store: await this.storeId(), p_from: from ?? null, p_to: to ?? null });
+    if (error) throw error;
+    return (data ?? []).map((d) => ({ id: d.id, date: d.dep_date, amount: Number(d.amount), memo: d.memo }));
   },
   // 이미 있는 건(ref 같음)은 건드리지 않는다 → 종결·독촉 기록이 유지된다. 새로 들어간 건수를 돌려준다.
   async stAddRecv(rows) {

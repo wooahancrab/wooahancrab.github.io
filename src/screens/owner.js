@@ -7,6 +7,7 @@ import { renderChecklistAdmin } from "./checklist-admin.js";
 import { renderTasksAdmin } from "./tasks-admin.js";
 import { renderSettle } from "./settle.js";
 import { renderSales } from "./sales.js";
+import { canViewFinance } from "../lib/recon18.js";
 import { renderShip } from "./ship.js";
 import { renderWork } from "./work.js";
 import { attText, claimText, claimItems, checkText, kakaoText, summarize, normalize } from "../lib/report.js";
@@ -23,6 +24,7 @@ export async function renderOwner(root, ctx, opts = {}) {
   let showAccounts = !!opts.allAccounts; // 총괄 앱의 "전체 계정" 화면이면 처음부터 계정 화면
   let showAtt = false;
   let showSettle = false;
+  let showRecon = false; // 매출-입금 대조(대표·부대표·회장)
   let showSales = false;
   let showShip = false;
   let showWork = false;
@@ -50,6 +52,7 @@ export async function renderOwner(root, ctx, opts = {}) {
     : null;
   const ROLE_KO = { owner: "대표", deputy: "부대표", manager: "매니저", supervisor: "중간관리자", staff: "직원" };
   const isMaster = ctx.role === "owner"; // 부대표는 계정·설정을 바꿀 수 없다
+  const canFinance = canViewFinance(ctx.role); // 매출-입금 대조: 대표·부대표·회장 (서버 can_view_finance 와 같다)
 
   const draw = () => {
     const y = scrollY;
@@ -103,6 +106,14 @@ export async function renderOwner(root, ctx, opts = {}) {
       const holder = h("div");
       root.replaceChildren(holder);
       renderSettle(holder, () => { showSettle = false; draw(); });
+      scrollTo(0, 0);
+      return;
+    }
+    if (showRecon && canFinance) {
+      const holder = h("div");
+      root.replaceChildren(holder);
+      import("./recon18.js").then((m) => m.renderRecon18(holder, () => { showRecon = false; draw(); }, { profile: ctx }))
+        .catch((e) => holder.replaceChildren(h("div", { class: "page" }, h("button", { class: "linkbtn back", onclick: () => { showRecon = false; draw(); } }, "← 목록"), h("p", { class: "err" }, "화면을 불러오지 못했어요: " + e.message))));
       scrollTo(0, 0);
       return;
     }
@@ -253,12 +264,12 @@ export async function renderOwner(root, ctx, opts = {}) {
 
   async function loadCl() {
     try { clOpen = (await api.clList("open")).claims; } catch { clOpen = null; }
-    if (!showAccounts && !showAtt && !showCl && !showChk && !detail) draw();
+    if (!showAccounts && !showAtt && !showCl && !showChk && !showRecon && !detail) draw();
   }
 
   async function load() {
     try { rows = hasReport ? await api.listReports(addDays(today, -190)) : []; err = null; } catch (e) { err = e.message; }
-    loading = false; draw();
+    loading = false; if (!showRecon) draw(); // 매출-입금 대조를 보는 중이면 다시 그려서 입력을 지우지 않는다(돌아오면 그때 그린다)
   }
 
   const byDate = () => Object.fromEntries(rows.map((r) => [r.report_date, r]));
@@ -273,6 +284,7 @@ export async function renderOwner(root, ctx, opts = {}) {
         h("button", { class: "btn ghost slim", onclick: () => { showAtt = true; draw(); } }, "🕘 출퇴근"),
         ["fnb", "gejang"].includes(opts.store?.app_key) && h("button", { class: "btn ghost slim", onclick: () => { showSales = true; draw(); } }, "📊 매출·지출"),
         ["fnb", "gejang"].includes(opts.store?.app_key) && h("button", { class: "btn ghost slim", onclick: () => { showSettle = true; draw(); } }, "💰 통장·수금"),
+        canFinance && ["fnb", "gejang"].includes(opts.store?.app_key) && h("button", { class: "btn ghost slim", onclick: () => { showRecon = true; draw(); } }, "🧮 매출-입금 대조"),
         opts.store?.app_key === "fnb" && h("button", { class: "btn ghost slim", onclick: () => { showShip = true; draw(); } }, "📦 송장"),
         opts.store?.kind === "hq" && h("button", { class: "btn ghost slim", onclick: () => { showWork = true; draw(); } }, "🗂 업무 기록"),
         isMaster && h("button", { class: "btn ghost slim", onclick: () => { showAccounts = true; loadUsers(); } }, "👤 계정")),
