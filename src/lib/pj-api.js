@@ -1,7 +1,9 @@
 // 프로젝트 아카이브 호출 모음 (supabase/projects.sql). 화면은 api.pj() 로 이 객체를 받아 쓴다.
 // 읽고 쓰기는 앱이 표·보관함에 직접 하고, 누가 볼 수 있는지는 DB 접근 규칙(RLS)이 막는다.
-// 모든 메서드는 실패하면 한국어 메시지의 Error 를 던진다. 화면 코드는 여기에 없다.
+// 모든 메서드는 실패하면 화면 언어 메시지의 Error 를 던진다(한국어 화면에서는 한국어, 베트남어·영어 화면에서는 사전 번역). 화면 코드는 여기에 없다.
 import { checkFile, isImage, resizeImage, signedUrls } from "./img.js";
+import { t, lang } from "./i18n.js";
+import { fmtDur } from "./kst.js";
 
 const BUCKET = "projects";
 const NOT_READY = "프로젝트 기능이 아직 준비되지 않았어요 (projects.sql 실행이 필요해요)";
@@ -26,25 +28,35 @@ const ALLOWED_MIME = new Set([
 // 같은 종류의 옛 이름
 const MIME_ALIAS = { "image/pjpeg": "image/jpeg", "image/x-png": "image/png" };
 
-// 우리가 직접 만든 한국어 오류. mapErr 를 다시 거쳐도 그대로 나간다
-function kerr(msg, extra) {
-  return Object.assign(new Error(msg), { pjKorean: true }, extra);
+// 한국어 안내문 → 화면 언어(한국어 화면에서는 그대로). 사전에 없으면 한국어 그대로 나온다.
+// 시간이 들어간 서버 문구(project-notify 의 '다시 보낼 수 있는 때')는 틀을 찾아 시간을 화면 언어로 채운다
+const WAIT_RE = /^이 글은 방금 알림을 보냈어요\. (?:(\d+)시간)?(?: ?(\d+)분)? 뒤에 다시 보낼 수 있어요$/;
+function trMsg(msg) {
+  if (lang() === "ko") return msg;
+  const m = WAIT_RE.exec(msg);
+  if (m) return t("이 글은 방금 알림을 보냈어요. {w} 뒤에 다시 보낼 수 있어요", { w: fmtDur((Number(m[1]) || 0) * 60 + (Number(m[2]) || 0)) });
+  return t(msg);
 }
 
-// Supabase 오류(Postgrest·Storage)·네트워크 오류 → 한국어 Error. notReady: 표·함수가 없을 때 보여 줄 안내문
+// 우리가 직접 만든 오류(글은 던지는 때의 화면 언어로 담는다. 이미 번역된 글을 넘겨도 그대로 나간다). mapErr 를 다시 거쳐도 그대로 나간다
+function kerr(msg, extra) {
+  return Object.assign(new Error(trMsg(msg)), { pjKorean: true }, extra);
+}
+
+// Supabase 오류(Postgrest·Storage)·네트워크 오류 → 화면 언어 Error. notReady: 표·함수가 없을 때 보여 줄 안내문
 function mapErr(e, fallback = "처리하지 못했어요", notReady = NOT_READY) {
   if (e && e.pjKorean) return e;
   const code = String(e?.code ?? "");
   const status = String(e?.status ?? e?.statusCode ?? "");
   const raw = String(e?.message ?? e ?? "");
   let msg;
-  if (/[가-힣]/.test(raw)) msg = raw; // 서버 함수가 한국어로 준 안내문(예: 고정은 5개까지)은 그대로
+  if (/[가-힣]/.test(raw)) msg = raw; // 서버 함수가 한국어로 준 안내문(예: 고정은 5개까지)은 그대로(화면 언어로는 kerr 가 사전에서 찾아 바꾼다)
   else if (code === "42P01" || code === "42883" || code === "PGRST202" || code === "PGRST205" || status === "404"
     || /could not find the (table|function)|relation .* does not exist|function .* does not exist|bucket not found/i.test(raw)) msg = notReady;
   else if (code === "42501" || status === "403" || /permission denied|row-level security|not authorized|unauthorized|forbidden/i.test(raw)) msg = NO_PERM;
   else if (status === "401" || /jwt expired|invalid jwt/i.test(raw)) msg = "로그인이 만료됐어요. 다시 로그인해 주세요";
   else if (/failed to fetch|networkerror|load failed|network request failed/i.test(raw)) msg = "인터넷 연결을 확인하고 다시 시도해 주세요";
-  else msg = `${fallback} (${raw.slice(0, 140)})`;
+  else msg = `${trMsg(fallback)} (${raw.slice(0, 140)})`; // 뒤의 괄호는 DB·네트워크가 준 영어 원문이라 번역하지 않는다
   return kerr(msg, { code, cause: e });
 }
 
@@ -120,7 +132,7 @@ export function makePj({ sb, me }) {
     const ids = [...new Set((member_ids ?? []).filter((x) => typeof x === "string" && UUID_RE.test(x) && x !== uid))];
     if (ids.length) {
       const { error: e2 } = await c.from("pj_members").insert(ids.map((user_id) => ({ project_id: id, user_id, role: "member" })));
-      if (e2) throw kerr(`프로젝트는 만들었지만 참여자를 추가하지 못했어요 (${mapErr(e2).message})`, { projectId: id });
+      if (e2) throw kerr(t("프로젝트는 만들었지만 참여자를 추가하지 못했어요 ({msg})", { msg: mapErr(e2).message }), { projectId: id });
     }
     return id;
   }
@@ -180,14 +192,14 @@ export function makePj({ sb, me }) {
     for (let i = 0; i < list.length; i += 100) {
       const batch = list.slice(i, i + 100);
       const { data, error } = await c.storage.from(BUCKET).remove(batch);
-      if (error) throw kerr(`보관함의 파일을 지우지 못해 중단했어요 (${mapErr(error).message})`);
+      if (error) throw kerr(t("보관함의 파일을 지우지 못해 중단했어요 ({msg})", { msg: mapErr(error).message }));
       // 지울 권한이 없는 파일은 오류 없이 결과에서 빠진다. 결과가 모자랄 때만, 아직 남은 파일이 있는지 확인한다
       // (이미 없는 파일도 결과에서 빠지므로 개수만 비교해 막으면 재시도가 안 된다)
       if ((data?.length ?? 0) < batch.length) {
         const { data: left, error: e2 } = await c.storage.from(BUCKET).createSignedUrls(batch, 10);
-        if (e2) throw kerr(`보관함의 파일이 지워졌는지 확인하지 못해 중단했어요 (${mapErr(e2).message})`);
+        if (e2) throw kerr(t("보관함의 파일이 지워졌는지 확인하지 못해 중단했어요 ({msg})", { msg: mapErr(e2).message }));
         const n = (left ?? []).filter((x) => x && !x.error).length;
-        if (n) throw kerr(`보관함의 파일 ${n}개를 지우지 못해 중단했어요 (권한)`);
+        if (n) throw kerr(t("보관함의 파일 {n}개를 지우지 못해 중단했어요 (권한)", { n }));
       }
     }
   }

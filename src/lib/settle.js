@@ -2,7 +2,9 @@
 // receivable: { id, source, counterparty, expected_date, amount, estimated, closed, ... }
 // deposit:    { id, date, amount, memo }
 import { addDays } from "./kst.js";
+import { t, tx, fmtNum } from "./i18n.js";
 
+// SOURCES 의 label 은 거래처 이름으로 DB 에 저장되는 값이라 한국어 그대로 둔다. 화면에 보일 때는 partyName() 을 거친다.
 export const SOURCES = {
   naver: { label: "네이버 스토어", alias: ["네이버", "NAVER", "naver", "네이버페이"], grace: 3 },
   talkdeal: { label: "톡딜", alias: ["카카오", "KAKAO", "kakao", "톡딜", "카카오페이"], grace: 3 },
@@ -11,7 +13,14 @@ export const SOURCES = {
   manual: { label: "직접 입력", alias: [], grace: 3 },
 };
 
-export const won = (n) => Math.round(n).toLocaleString("ko-KR") + "원";
+// 화면에 보이는 원화 금액: 한국어 1,234원 · 영어 KRW 1,234 · 베트남어 1.234 won
+export const won = (n) => { const r = Math.round(n); return t("{n}원", { n: Number.isFinite(r) ? fmtNum(r) : r.toLocaleString("ko-KR") }); }; // 숫자가 아닌 값은 예전처럼 NaN원 (fmtNum 은 "-" 를 돌려줘서 한국어 화면이 달라진다)
+// 카톡·문자로 내보내는 글은 화면 언어와 상관없이 한국어
+const wonKo = (n) => Math.round(n).toLocaleString("ko-KR") + "원";
+
+// 화면에 보이는 거래처 이름: 시스템이 정한 이름(채널·플랫폼)만 번역하고, 사람이 입력한 이름은 그대로 둔다
+const SYSTEM_PARTIES = new Set(["네이버 스토어", "톡딜", "쿠팡", "세금계산서", "직접 입력", "돌쇠", "착밀(Grip)", "기타"]);
+export const partyName = (s) => (SYSTEM_PARTIES.has(s) ? tx("거래처", s) : s); // "직접 입력"은 출퇴근 화면에서는 다른 뜻이라 "거래처::직접 입력"으로 따로 둔다
 
 export function daysBetween(a, b) { // b - a (YYYY-MM-DD)
   return Math.round((Date.parse(b + "T00:00:00Z") - Date.parse(a + "T00:00:00Z")) / 86400000);
@@ -164,7 +173,7 @@ function findHeader(rows, spec) {
 // 통장 거래내역 → [{date, amount(입금만), memo}]
 export function parseBank(rows) {
   const hd = findHeader(rows, COLS.bank);
-  if (!hd) throw new Error("입금 열을 못 찾았어요. 헤더에 '거래일자'와 '입금액'이 있는 표인지 확인해 주세요");
+  if (!hd) throw new Error(t("입금 열을 못 찾았어요. 헤더에 '{a}'와 '{b}'이 있는 표인지 확인해 주세요", { a: "거래일자", b: "입금액" })); // 엑셀 열 이름은 한국어 그대로
   const { map } = hd;
   const memoCols = hd.cells.map((c, i) => [c, i]).filter(([c]) => COLS.bank.memo.map(norm).some((w) => c && (c === w || c.includes(w)))).map(([, i]) => i);
   const out = [];
@@ -175,14 +184,14 @@ export function parseBank(rows) {
     if (!(amt > 0)) continue;
     out.push({ date, amount: amt, memo: memoCols.map((i) => String(r[i] ?? "").trim()).filter(Boolean).join(" ") });
   }
-  if (!out.length) throw new Error("입금 내역이 한 건도 없어요");
+  if (!out.length) throw new Error(t("입금 내역이 한 건도 없어요"));
   return out;
 }
 
 // 홈택스 세금계산서(매출) → 받을 돈. termDays: 작성일 + N일을 입금 예정일로 본다
 export function parseInvoice(rows, termDays = 30) {
   const hd = findHeader(rows, COLS.invoice);
-  if (!hd || hd.map.total == null && hd.map.supply == null) throw new Error("세금계산서 표가 아니에요. '작성일자'와 '합계금액' 열이 필요해요");
+  if (!hd || hd.map.total == null && hd.map.supply == null) throw new Error(t("세금계산서 표가 아니에요. '{a}'와 '{b}' 열이 필요해요", { a: "작성일자", b: "합계금액" }));
   const { map } = hd; const out = [];
   for (const r of rows.slice(hd.row + 1)) {
     const date = toDate(r[map.date]); if (!date) continue;
@@ -192,14 +201,14 @@ export function parseInvoice(rows, termDays = 30) {
     const party = String(r[map.party] ?? "").trim();
     out.push({ source: "invoice", counterparty: party, expected_date: addDays(date, termDays), amount: amt, ref: map.no != null && r[map.no] ? "inv:" + r[map.no] : `inv:${date}:${party}:${amt}`, estimated: false, note: `계산서 ${date}` });
   }
-  if (!out.length) throw new Error("세금계산서 내역이 없어요");
+  if (!out.length) throw new Error(t("세금계산서 내역이 없어요"));
   return out;
 }
 
 // 네이버·톡딜 등 정산내역 → 정산예정일별 합계 1건씩
 export function parseSettle(rows, source) {
   const hd = findHeader(rows, COLS.settle);
-  if (!hd || hd.map.amount == null) throw new Error("정산 표가 아니에요. '정산예정일'과 '정산금액' 열이 필요해요");
+  if (!hd || hd.map.amount == null) throw new Error(t("정산 표가 아니에요. '{a}'과 '{b}' 열이 필요해요", { a: "정산예정일", b: "정산금액" }));
   const { map } = hd; const by = new Map();
   // 건별 표(네이버 "정산예정금액", 톡딜 "판매정산금액")는 아직 확정 전이라 추정으로 본다.
   // 이미 정산 완료된 건은 일별 정산 표(정산금액)로 받는 게 정확해서(혜택 정산 등이 빠진 값) 네이버 건별 표에서는 뺀다.
@@ -212,7 +221,7 @@ export function parseSettle(rows, source) {
     const x = by.get(date) ?? by.set(date, { n: 0, sum: 0 }).get(date);
     x.n++; x.sum += amt;
   }
-  if (!by.size) throw new Error("정산할 내역이 없어요. 이미 정산 완료된 건만 있다면 일별 정산 표(정산확정금액)를 올려 주세요");
+  if (!by.size) throw new Error(t("정산할 내역이 없어요. 이미 정산 완료된 건만 있다면 일별 정산 표({a})를 올려 주세요", { a: "정산확정금액" }));
   return [...by].map(([date, x]) => ({ source, counterparty: SOURCES[source].label, expected_date: date, amount: x.sum, ref: `${source}:${date}`, estimated: perOrder, note: `${x.n}건 합계${perOrder ? " (추정)" : ""}` }));
 }
 
@@ -227,7 +236,7 @@ export function parseDolsoe(rows, payDays = 5) {
       if (t === "총정산금액" && total == null) { for (let j = i + 1; j < cells.length; j++) { const n = num(cells[j]); if (n > 0) { total = n; break; } } }
     }
   }
-  if (!period || !(total > 0)) throw new Error("돌쇠네 정산서가 아니에요. 정산기간과 총 정산금액이 있는 첫 시트가 필요해요");
+  if (!period || !(total > 0)) throw new Error(t("돌쇠네 정산서가 아니에요. {a}과 {b}이 있는 첫 시트가 필요해요", { a: "정산기간", b: "총 정산금액" }));
   return [{ source: "manual", counterparty: "돌쇠", expected_date: addDays(period[1], payDays), amount: total, ref: `dolsoe:${period[0]}~${period[1]}`, estimated: false, note: `정산기간 ${period[0]} ~ ${period[1]}` }];
 }
 
@@ -235,7 +244,7 @@ export function parseDolsoe(rows, payDays = 5) {
 // 실제 입금액과 다를 수 있어 추정으로 표시한다. 반품·수기조정 시트는 반영하지 않는다.
 export function parseGrip(rows) {
   const hd = findHeader(rows, { date: ["정산일"], gross: ["최종상품금액"], ship: ["최종배송비"], fee1: ["기본판매수수료+결제망이용료", "기본판매수수료결제망이용료"], fee2: ["유입수수료"], fee3: ["착밀수수료"], vat: ["vat"] });
-  if (!hd || hd.map.gross == null) throw new Error("착밀(Grip) 정산 상세 표가 아니에요. 정산일과 최종 상품금액 열이 필요해요");
+  if (!hd || hd.map.gross == null) throw new Error(t("착밀(Grip) 정산 상세 표가 아니에요. {a}과 {b} 열이 필요해요", { a: "정산일", b: "최종 상품금액" }));
   const { map } = hd; const by = new Map();
   const v = (r, k) => (map[k] == null ? 0 : num(r[map[k]]) || 0);
   for (const r of rows.slice(hd.row + 1)) {
@@ -245,12 +254,12 @@ export function parseGrip(rows) {
     x.n++; x.sum += net;
   }
   const out = [...by].filter(([, x]) => x.sum > 0).map(([date, x]) => ({ source: "manual", counterparty: "착밀(Grip)", expected_date: date, amount: Math.round(x.sum), ref: `grip:${date}`, estimated: true, note: `${x.n}건 합계 (수수료 계산 추정)` }));
-  if (!out.length) throw new Error("정산 내역이 없어요");
+  if (!out.length) throw new Error(t("정산 내역이 없어요"));
   return out;
 }
 
-// 독촉 문구(복사용)
+// 독촉 문구(복사용). 거래처에 한국어로 보내는 글이라 화면 언어와 상관없이 한국어(금액도 wonKo)
 export function dunText(r) {
   const who = r.counterparty || SOURCES[r.source]?.label || "";
-  return `안녕하세요, 우아한F&B입니다.\n${r.expected_date} 입금 예정이던 ${who} ${won(r.amount)} 건이 아직 확인되지 않습니다.\n확인 후 회신 부탁드립니다. 감사합니다.`;
+  return `안녕하세요, 우아한F&B입니다.\n${r.expected_date} 입금 예정이던 ${who} ${wonKo(r.amount)} 건이 아직 확인되지 않습니다.\n확인 후 회신 부탁드립니다. 감사합니다.`;
 }

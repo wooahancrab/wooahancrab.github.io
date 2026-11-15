@@ -2,6 +2,7 @@
 // 신협 "입출금거래내역" 엑셀 형식에 맞춤: 거래일자·거래시간·출금금액·입금금액·거래후잔액·거래종류·거래기록사항.
 // 한 파일에 시트가 여러 개일 수 있고 같은 거래가 겹쳐 들어 있어서, 거래후잔액까지 넣은 키로 중복을 없앤다.
 import { toDate } from "./settle.js";
+import { t } from "./i18n.js";
 
 const num = (v) => {
   if (typeof v === "number") return v;
@@ -68,8 +69,8 @@ export function parseBankStatement(sheets) {
       (inn > 0 ? deposits : withdrawals).push({ date, amount: inn > 0 ? inn : out, memo, ref });
     }
   }
-  if (!found) throw new Error("통장 거래내역 표를 못 찾았어요. 헤더에 '거래일자'와 '입금금액·출금금액'이 있는 표인지 확인해 주세요");
-  if (!deposits.length && !withdrawals.length) throw new Error("거래 내역이 한 건도 없어요");
+  if (!found) throw new Error(t("통장 거래내역 표를 못 찾았어요. 헤더에 '{a}'와 '{b}'이 있는 표인지 확인해 주세요", { a: "거래일자", b: "입금금액·출금금액" })); // 엑셀 열 이름은 한국어 그대로
+  if (!deposits.length && !withdrawals.length) throw new Error(t("거래 내역이 한 건도 없어요"));
   return { deposits, withdrawals, dup };
 }
 

@@ -3,6 +3,7 @@
 // 같은 거래처의 계산서 여러 장을 한 번에 이체하기도 해서, 건별이 아니라 "거래처별 합계"로 맞춘다.
 import { toDate } from "./settle.js";
 import { matchRule, classifySpend } from "./bank.js";
+import { t } from "./i18n.js";
 
 const num = (v) => {
   if (typeof v === "number") return v;
@@ -44,8 +45,8 @@ export function parseInvoices(sheets) {
       });
     }
   }
-  if (!found) throw new Error("계산서 목록 표를 못 찾았어요. 홈택스 '전자(세금)계산서 목록조회' 엑셀인지 확인해 주세요 ('작성일자'와 '합계금액' 열이 필요해요)");
-  if (!out.length) throw new Error("계산서가 한 건도 없어요");
+  if (!found) throw new Error(t("계산서 목록 표를 못 찾았어요. 홈택스 '{menu}' 엑셀인지 확인해 주세요 ('{a}'와 '{b}' 열이 필요해요)", { menu: "전자(세금)계산서 목록조회", a: "작성일자", b: "합계금액" })); // 홈택스 메뉴·엑셀 열 이름은 한국어 그대로
+  if (!out.length) throw new Error(t("계산서가 한 건도 없어요"));
   return out;
 }
 

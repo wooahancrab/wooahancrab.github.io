@@ -10,11 +10,13 @@
 //     매출일 없는 입금은 날짜별 대응이 추정이다(est). 총액(결제수단별 합계) 대조는 정확하다.
 //  5) 수수료: 입금에 수수료 칸이 있으면 그대로, 없으면 계약 수수료율로 역산(입금 ÷ (1−율)), 둘 다 없으면 0(차이에 수수료가 섞임).
 import { addDays, dow } from "./kst.js";
+import { t, tx, lang, fmtNum } from "./i18n.js";
 
-export const METHODS = [
-  ["card", "카드"], ["cash", "현금"], ["delivery", "배달앱"], ["smartstore", "스마트스토어"], ["etc", "기타"],
-];
-export const METHOD_LABEL = Object.fromEntries(METHODS);
+// 결제수단: 구분 값(card…)은 그대로 쓰고, 화면에 보이는 이름은 읽는 순간 화면 언어로 바꾼다(모듈이 불러와질 때는 아직 한국어라 getter 로 둔다).
+// 한국어(ko)에서는 예전과 똑같이 "카드"·"현금"·"배달앱"·"스마트스토어"·"기타"가 나온다.
+const LABELS = { card: () => t("카드"), cash: () => t("현금"), delivery: () => t("배달앱"), smartstore: () => t("스마트스토어"), etc: () => t("기타") };
+export const METHODS = Object.keys(LABELS).map((k) => Object.defineProperty([k, ""], 1, { get: LABELS[k], enumerable: true })); // [[구분 값, 이름], …] — 이름은 읽을 때 화면 언어
+export const METHOD_LABEL = Object.defineProperties({}, Object.fromEntries(Object.keys(LABELS).map((k) => [k, { get: LABELS[k], enumerable: true }])));
 export const DEFAULT_DAYS = 18;
 // 열람 권한: 대표·부대표·회장. 서버(supabase/recon18.sql 의 can_view_finance)와 같아야 한다. 'chairman'은 회장 역할을 만들 때 이름을 맞춘다.
 export const FINANCE_VIEW_ROLES = ["owner", "deputy", "chairman"];
@@ -65,14 +67,14 @@ export function inferMethod(text) {
 
 /* ---------------- 정규화 ---------------- */
 function cleanSales(sales) {
-  return (sales ?? []).filter((s) => s && isoOk(s.date) && Number.isFinite(s.amount) && s.amount > 0).map((s) => ({ date: s.date, method: METHOD_LABEL[s.method] ? s.method : "etc", amount: Math.round(s.amount) }));
+  return (sales ?? []).filter((s) => s && isoOk(s.date) && Number.isFinite(s.amount) && s.amount > 0).map((s) => ({ date: s.date, method: LABELS[s.method] ? s.method : "etc", amount: Math.round(s.amount) }));
 }
 function cleanDeps(deps) {
   return (deps ?? []).map((d, i) => ({ d, i })).filter(({ d }) => d && isoOk(d.date) && Number.isFinite(d.amount) && d.amount > 0).map(({ d, i }) => ({
     idx: i, date: d.date, payer: String(d.payer ?? ""), amount: Math.round(d.amount),
     saleDate: isoOk(d.saleDate) ? d.saleDate : null,
     fee: Number.isFinite(d.fee) && d.fee >= 0 ? Math.round(d.fee) : null,
-    method: METHOD_LABEL[d.method] ? d.method : (inferMethod(d.payer) ?? "etc"),
+    method: LABELS[d.method] ? d.method : (inferMethod(d.payer) ?? "etc"),
     linked: d.linked === true, // 사람이 눌러서 매출에 연결한 입금(saleDate 를 지정한 것과 같게 처리)
   }));
 }
@@ -155,14 +157,21 @@ export function candidatesFor(row, unmatched, opts = {}) {
 }
 
 /* ---------------- 누락 건 상세(화면·인쇄·엑셀 공통) ---------------- */
-export const CAUSE_KO = { none: "입금 자체가 없음", partial: "일부만 들어옴", fee_high: "수수료가 계약보다 많음", over: "초과 입금" };
-export const MODE_KO = { explicit: "매출일로 정확히 연결", manual: "직접 연결(사람이 선택)", fifo: "오래된 매출부터 채운 추정" };
+// 이름은 getter — 읽는 순간 화면 언어로 나온다(한국어에서는 아래 글자 그대로). 이름이 CAUSE_KO·MODE_KO 인 것은 예전 이름을 지키기 위해서다.
+export const CAUSE_KO = {
+  get none() { return t("입금 자체가 없음"); }, get partial() { return t("일부만 들어옴"); },
+  get fee_high() { return t("수수료가 계약보다 많음"); }, get over() { return t("초과 입금"); },
+};
+export const MODE_KO = {
+  get explicit() { return t("매출일로 정확히 연결"); }, get manual() { return t("직접 연결(사람이 선택)"); },
+  get fifo() { return t("오래된 매출부터 채운 추정"); },
+};
 export const STATUS_KEYS = ["pre", "asking", "done"];
-/** 처리 상태 이름. 가운데 상태는 결제수단에 맞춰 '카드사 문의 중' 등으로 보인다 */
+/** 처리 상태 이름(화면 언어). 가운데 상태는 결제수단에 맞춰 '카드사 문의 중' 등으로 보인다 */
 export function statusLabel(status, method) {
-  if (status === "done") return "확인 완료";
-  if (status === "asking") return { card: "카드사 문의 중", delivery: "배달앱 문의 중", smartstore: "스마트스토어 문의 중" }[method] ?? "문의 중";
-  return "확인 전";
+  if (status === "done") return tx("처리 상태", "확인 완료");
+  if (status === "asking") return { card: t("카드사 문의 중"), delivery: t("배달앱 문의 중"), smartstore: t("스마트스토어 문의 중") }[method] ?? t("문의 중");
+  return tx("처리 상태", "확인 전");
 }
 export const noteKey = (row) => `${row.date}|${row.method}`;
 /** 누락 점검표 한 건의 상세: 그날 매출·배정된 입금·차이와 원인·후보 입금·메모/처리 상태. notes = { 'YYYY-MM-DD|method': { status, memo } } */
@@ -333,7 +342,8 @@ function header(rows, spec, need) {
 }
 export function parseSalesRows(rows) {
   const hd = header(rows, { date: ["매출일", "매출일자", "일자", "날짜", "영업일"], method: ["결제수단", "결제구분", "수단", "구분", "결제방법"], amount: ["매출액", "매출금액", "금액", "합계", "승인금액"] }, ["date", "amount"]);
-  if (!hd) throw new Error("매출 표가 아니에요. '일자(매출일)'와 '금액(매출액)' 열이 필요해요");
+  // 열 이름(일자·매출일·금액·매출액 …)은 올린 파일에서 알아보는 한국어 낱말이라 번역하지 않고 자리표시자로 그대로 보여 준다
+  if (!hd) throw new Error(t("매출 표가 아니에요. {a}와 {b} 열이 필요해요", { a: "'일자(매출일)'", b: "'금액(매출액)'" }));
   const out = []; let dropped = 0;
   for (const r of rows.slice(hd.row + 1)) {
     const date = dateOf(r[hd.map.date]), amount = numOf(r[hd.map.amount]);
@@ -343,13 +353,13 @@ export function parseSalesRows(rows) {
     const raw = hd.map.method != null ? String(r[hd.map.method] ?? "") : "";
     out.push({ date, method: inferMethod(raw) ?? "etc", amount: Math.round(amount) });
   }
-  if (!out.length) throw new Error("매출 내역이 한 건도 없어요");
+  if (!out.length) throw new Error(t("매출 내역이 한 건도 없어요"));
   out.dropped = dropped;
   return out;
 }
 export function parseDepositRows(rows) {
   const hd = header(rows, { date: ["입금일", "입금일자", "거래일자", "일자", "날짜"], payer: ["입금처", "보낸분", "입금자", "적요", "내용", "거래처"], amount: ["입금액", "입금금액", "입금", "금액"], saleDate: ["매출일", "매출일자", "정산대상일"], fee: ["수수료", "수수료금액"], method: ["결제수단", "결제구분"] }, ["date", "amount"]);
-  if (!hd) throw new Error("입금 표가 아니에요. '입금일'과 '입금액' 열이 필요해요");
+  if (!hd) throw new Error(t("입금 표가 아니에요. {a}과 {b} 열이 필요해요", { a: "'입금일'", b: "'입금액'" }));
   // 헤더가 '수수료율'·'%' 이면 금액이 아니라 비율이라 수수료 금액으로 읽지 않는다
   if (hd.map.fee != null && /율|%/.test(norm(rows[hd.row][hd.map.fee]))) delete hd.map.fee;
   const out = []; let dropped = 0;
@@ -360,18 +370,28 @@ export function parseDepositRows(rows) {
     const fee = hd.map.fee != null ? numOf(r[hd.map.fee]) : NaN;
     out.push({ date, payer, amount: Math.round(amount), saleDate: hd.map.saleDate != null ? dateOf(r[hd.map.saleDate]) : null, fee: Number.isFinite(fee) && fee >= 0 ? Math.round(fee) : null, method: (hd.map.method != null ? inferMethod(String(r[hd.map.method] ?? "")) : null) ?? inferMethod(payer) });
   }
-  if (!out.length) throw new Error("입금 내역이 한 건도 없어요");
+  if (!out.length) throw new Error(t("입금 내역이 한 건도 없어요"));
   out.dropped = dropped;
   return out;
 }
 
 /* ---------------- 표시 ---------------- */
-/** 만원 단위 표시. 1만원 미만의 차이는 원 단위 그대로(0으로 보이지 않게) */
+/** 원 단위 금액(화면 언어): 1,234원 · KRW 1,234 · 1.234 won */
+export const fmtWon = (n) => t("{n}원", { n: fmtNum(n) });
+/**
+ * 금액 표시. 한국어는 만원 단위(1만원 미만의 차이는 원 단위 그대로, 0으로 보이지 않게).
+ * 영어·베트남어는 '만원'을 쓰지 않는다 — 원 단위 정확한 값을 KRW(영어)·won(베트남어)으로 보여 준다(1,234,567 → KRW 1,234,567 · 1.234.567 won).
+ */
 export function fmtMan(n) {
   if (!Number.isFinite(n)) return "-";
   const a = Math.abs(n), sign = n < 0 ? "−" : "";
+  if (lang() !== "ko") return sign + fmtWon(Math.round(a));
   if (a === 0) return "0원";
   if (a < 10000) return sign + a.toLocaleString("ko-KR") + "원";
   return sign + Math.round(a / 10000).toLocaleString("ko-KR") + "만원";
 }
-export const fmtPct = (r) => (r == null ? "-" : (r * 100).toFixed(1) + "%");
+/** 금액을 만원으로 반올림해 보여 주는 언어인가(한국어만). 아니면 화면 숫자끼리 어긋나지 않는다 */
+export const roundsToMan = () => lang() === "ko";
+/** 소수 자리 지정 숫자(화면 언어): 베트남어는 소수점이 쉼표(12,0) */
+export const fmtDec = (n, digits) => { const s = Number(n).toFixed(digits); return lang() === "vi" ? s.replace(".", ",") : s; };
+export const fmtPct = (r) => (r == null ? "-" : fmtDec(r * 100, 1) + "%");

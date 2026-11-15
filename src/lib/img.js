@@ -1,6 +1,7 @@
 // 프로젝트 사진·파일 공용 도우미: 올리기 전 검사, 폰에서 사진 줄이기, 임시 주소 묶음 캐시, 큰 사진 보기.
 // 브라우저에서만 돌아가고 서버 함수·비밀키는 쓰지 않는다. 파일 이름·글자는 모두 글자로만 화면에 넣는다(innerHTML 안 씀).
 import { h } from "./ui.js";
+import { t } from "./i18n.js";
 
 export const ALLOWED_EXT = new Set([
   "jpg", "jpeg", "png", "gif", "webp", "heic", "heif",
@@ -38,16 +39,16 @@ const safeName = (name) => {
 
 /* ---------------- 올리기 전 검사 ---------------- */
 
-// 올릴 수 있으면 null, 안 되면 한국어 이유
+// 올릴 수 있으면 null, 안 되면 이유(화면 언어로 번역한 문장)
 export function checkFile(file) {
-  if (!file) return "파일을 골라 주세요";
-  const nm = safeName(file.name) || "파일";
-  if (!file.size) return `${nm}: 내용이 비어 있는 파일이에요`;
-  if (file.size > MAX_BYTES) return `${nm}: 20MB보다 커서 올릴 수 없어요 (${(file.size / 1048576).toFixed(1)}MB)`;
-  if (/\s$/.test(String(file.name || ""))) return `${nm}: 파일 이름 끝의 공백을 지운 뒤 올려 주세요`;
+  if (!file) return t("파일을 골라 주세요");
+  const nm = safeName(file.name) || t("파일");
+  if (!file.size) return t("{nm}: 내용이 비어 있는 파일이에요", { nm });
+  if (file.size > MAX_BYTES) return t("{nm}: 20MB보다 커서 올릴 수 없어요 ({size}MB)", { nm, size: (file.size / 1048576).toFixed(1) });
+  if (/\s$/.test(String(file.name || ""))) return t("{nm}: 파일 이름 끝의 공백을 지운 뒤 올려 주세요", { nm });
   const ext = extOf(file.name);
-  if (!ext) return `${nm}: 확장자가 없는 파일은 올릴 수 없어요`;
-  if (!ALLOWED_EXT.has(ext)) return `${nm}: 올릴 수 없는 파일 형식이에요 (사진·pdf·문서·엑셀·ppt·hwp·txt·csv·zip만 가능해요)`;
+  if (!ext) return t("{nm}: 확장자가 없는 파일은 올릴 수 없어요", { nm });
+  if (!ALLOWED_EXT.has(ext)) return t("{nm}: 올릴 수 없는 파일 형식이에요 (사진·pdf·문서·엑셀·ppt·hwp·txt·csv·zip만 가능해요)", { nm });
   return null;
 }
 
@@ -376,14 +377,14 @@ export function openLightbox(items, startIndex, getUrl) {
 
   const count = h("span", { class: "pj-lb-count", "aria-live": "polite" });
   const nameEl = h("span", { class: "pj-lb-name" });
-  const dl = h("a", { class: "pj-lb-btn", target: "_blank", rel: "noopener", "aria-disabled": "true" }, "내려받기");
-  const closeBtn = h("button", { type: "button", class: "pj-lb-btn", "aria-label": "닫기", onclick: () => close() }, "닫기");
+  const dl = h("a", { class: "pj-lb-btn", target: "_blank", rel: "noopener", "aria-disabled": "true" }, t("내려받기"));
+  const closeBtn = h("button", { type: "button", class: "pj-lb-btn", "aria-label": t("닫기"), onclick: () => close() }, t("닫기"));
   const img = h("img", { class: "pj-lb-img", alt: "", draggable: "false", referrerpolicy: "no-referrer" });
   const msg = h("div", { class: "pj-lb-msg", role: "status" });
-  const prev = h("button", { type: "button", class: "pj-lb-nav prev", "aria-label": "이전 사진", onclick: () => go(-1) }, "‹");
-  const next = h("button", { type: "button", class: "pj-lb-nav next", "aria-label": "다음 사진", onclick: () => go(1) }, "›");
+  const prev = h("button", { type: "button", class: "pj-lb-nav prev", "aria-label": t("이전 사진"), onclick: () => go(-1) }, "‹");
+  const next = h("button", { type: "button", class: "pj-lb-nav next", "aria-label": t("다음 사진"), onclick: () => go(1) }, "›");
   const stage = h("div", { class: "pj-lb-stage" }, img, msg, prev, next);
-  const root = h("div", { class: "pj-lightbox", role: "dialog", "aria-modal": "true", "aria-label": "사진 크게 보기", tabindex: "-1" },
+  const root = h("div", { class: "pj-lightbox", role: "dialog", "aria-modal": "true", "aria-label": t("사진 크게 보기"), tabindex: "-1" },
     h("div", { class: "pj-lb-top" }, count, nameEl, dl, closeBtn),
     stage);
 
@@ -404,7 +405,7 @@ export function openLightbox(items, startIndex, getUrl) {
     const row = list[i] || {};
     count.textContent = `${i + 1} / ${list.length}`;
     nameEl.textContent = row.file_name || "";
-    img.alt = row.file_name || "사진";
+    img.alt = row.file_name || t("사진");
     img.onload = null;
     img.onerror = null;
     img.classList.remove("on");
@@ -413,14 +414,14 @@ export function openLightbox(items, startIndex, getUrl) {
     dl.setAttribute("aria-disabled", "true");
     prev.hidden = i <= 0;
     next.hidden = i >= list.length - 1;
-    setMsg("불러오는 중…");
+    setMsg(t("불러오는 중…"));
 
     const fail = () => {
       if (token !== seq || closed) return;
       if (!fresh) { show(i, true); return; } // 만료됐을 수 있으니 새 주소로 한 번만 다시
       setMsg(
-        h("div", null, "사진을 불러오지 못했어요"),
-        h("button", { type: "button", class: "pj-lb-btn", style: "margin-top:12px", onclick: () => show(i, true) }, "다시 시도"));
+        h("div", null, t("사진을 불러오지 못했어요")),
+        h("button", { type: "button", class: "pj-lb-btn", style: "margin-top:12px", onclick: () => show(i, true) }, t("다시 시도")));
     };
 
     Promise.resolve().then(() => getUrl(row, fresh)).then((url) => {

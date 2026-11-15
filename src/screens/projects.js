@@ -3,40 +3,47 @@
 // 사용자가 쓴 글자(이름·설명·파일 이름 등)는 모두 h() 로 글자로만 넣는다(innerHTML 안 씀).
 import { api } from "../lib/api.js";
 import { h, toast, modal, confirmDialog } from "../lib/ui.js";
-import { dateOf, labelMDKo as labelMD } from "../lib/kst.js";
+import { dateOf, labelMD } from "../lib/kst.js";
+import { t, tx, locale } from "../lib/i18n.js";
 
-const NOTICE = "대표·부대표는 모든 프로젝트를 볼 수 있어요. 고객 개인정보·급여·통장 자료는 올리지 마세요";
-const MEMBERS_NOTE = "대표·부대표는 명단에 없어도 모든 프로젝트를 볼 수 있어요";
-const COLORS = [
-  ["#A3161A", "빨강"], ["#d9822b", "주황"], ["#c9a227", "노랑"], ["#2e8b57", "초록"],
-  ["#14919b", "청록"], ["#3b6fb6", "파랑"], ["#7b5ea7", "보라"], ["#6b7280", "회색"],
+// 화면에 보이는 한국어는 모두 t()로 감싼다(한국어 화면에서는 글이 그대로 나온다).
+// 모듈 맨 위에서는 화면 언어가 아직 한국어라서, 표시용 글(안내문·색 이름·탭 이름)은 함수로 두고 그릴 때 부른다
+const notice = () => t("대표·부대표는 모든 프로젝트를 볼 수 있어요. 고객 개인정보·급여·통장 자료는 올리지 마세요");
+const membersNote = () => t("대표·부대표는 명단에 없어도 모든 프로젝트를 볼 수 있어요");
+const DEFAULT_COLOR = "#A3161A";
+const colors = () => [
+  [DEFAULT_COLOR, t("빨강")], ["#d9822b", t("주황")], ["#c9a227", t("노랑")], ["#2e8b57", t("초록")],
+  ["#14919b", t("청록")], ["#3b6fb6", t("파랑")], ["#7b5ea7", t("보라")], ["#6b7280", t("회색")],
 ];
-const TABS = [["feed", "피드"], ["files", "파일"], ["members", "참여자"]];
+const TAB_KEYS = ["feed", "files", "members"];
+const tabs = () => [["feed", t("피드")], ["files", tx("프로젝트 탭", "파일")], ["members", t("참여자")]]; // 탭 이름 '파일'은 글 안의 낱말 '파일'(File)과 번역이 달라 구분한다
 
-const safeColor = (c) => (/^#[0-9a-fA-F]{6}$/.test(String(c ?? "")) && String(c).toLowerCase() !== "#c8402a" ? String(c) : COLORS[0][0]); // 옛 기본 레드(#c8402a)는 새 레드로
-const msgOf = (e) => String((e && e.message) || "").trim() || "처리하지 못했어요";
+const safeColor = (c) => (/^#[0-9a-fA-F]{6}$/.test(String(c ?? "")) && String(c).toLowerCase() !== "#c8402a" ? String(c) : DEFAULT_COLOR); // 옛 기본 레드(#c8402a)는 새 레드로
+// 오류 글: pj-api.js 의 오류는 이미 화면 언어로 와서 그대로 나온다. 그 밖의 한국어 오류(api.js 등)는 사전에서 찾아 바꾼다
+const rawMsg = (e) => String((e && e.message) || "").trim();
+const msgOf = (e) => { const m = rawMsg(e); return m ? t(m) : t("처리하지 못했어요"); };
 const fmtDay = (iso) => { try { return labelMD(dateOf(iso)); } catch { return ""; } };
-const timeOf = (iso) => { const t = Date.parse(iso); return Number.isFinite(t) ? t : 0; };
-// 저장 공간 표시용: 바이트 → MB (10 MB 미만은 소수 한 자리)
+const timeOf = (iso) => { const ms = Date.parse(iso); return Number.isFinite(ms) ? ms : 0; };
+// 저장 공간 표시용: 바이트 → MB (10 MB 미만은 소수 한 자리). 숫자 모양은 화면 언어를 따른다(1,234 / 1.234, 소수점 . / ,)
 const fmtMB = (bytes) => {
   const mb = bytes / 1048576;
-  return mb.toLocaleString("ko-KR", { maximumFractionDigits: mb < 10 ? 1 : 0 });
+  return mb.toLocaleString(locale(), { maximumFractionDigits: mb < 10 ? 1 : 0 });
 };
 
 // 알림은 카카오톡·네이버 같은 앱 안의 브라우저에서는 켤 수 없다
 const IN_APP_RE = /KAKAOTALK|NAVER\(inapp|Instagram|FB_IAB|FBAN|FBAV|DaumApps|\bLine\//i;
 const inAppBrowser = () => { try { return IN_APP_RE.test(navigator.userAgent || ""); } catch { return false; } };
-const IN_APP_HINT = "카카오톡·네이버 같은 앱 안의 화면에서는 알림을 켤 수 없어요. 오른쪽 위 메뉴에서 [다른 브라우저로 열기]를 눌러 Chrome(안드로이드)이나 Safari(아이폰)에서 열어 주세요";
-// api.enablePush() 의 오류를 알아보기 쉬운 안내로 바꾼다
+const inAppHint = () => t("카카오톡·네이버 같은 앱 안의 화면에서는 알림을 켤 수 없어요. 오른쪽 위 메뉴에서 [다른 브라우저로 열기]를 눌러 Chrome(안드로이드)이나 Safari(아이폰)에서 열어 주세요");
+// api.enablePush() 의 오류를 알아보기 쉬운 안내로 바꾼다(오류 글은 한국어 원문으로 알아본다)
 function pushErrText(e) {
-  const m = msgOf(e);
-  if (/허용되지 않/.test(m)) return "알림이 막혀 있어요. 주소창 옆 자물쇠(또는 설정)에서 알림을 [허용]으로 바꾼 뒤 다시 눌러 주세요";
+  const m = rawMsg(e) || "처리하지 못했어요";
+  if (/허용되지 않/.test(m)) return t("알림이 막혀 있어요. 주소창 옆 자물쇠(또는 설정)에서 알림을 [허용]으로 바꾼 뒤 다시 눌러 주세요");
   if (/지원하지 않/.test(m)) {
-    return inAppBrowser() ? IN_APP_HINT
-      : "이 브라우저에서는 알림을 켤 수 없어요. Chrome(안드로이드)이나 Safari(아이폰)에서 열어 주세요. 아이폰은 Safari의 [공유 → 홈 화면에 추가]로 설치한 앱에서만 알림이 와요";
+    return inAppBrowser() ? inAppHint()
+      : t("이 브라우저에서는 알림을 켤 수 없어요. Chrome(안드로이드)이나 Safari(아이폰)에서 열어 주세요. 아이폰은 Safari의 [공유 → 홈 화면에 추가]로 설치한 앱에서만 알림이 와요");
   }
-  if (/VAPID/i.test(m)) return "알림 설정이 아직 끝나지 않았어요. 담당자에게 알려 주세요";
-  return /[가-힣]/.test(m) ? m : `알림을 켜지 못했어요 (${m.slice(0, 80)})`;
+  if (/VAPID/i.test(m)) return t("알림 설정이 아직 끝나지 않았어요. 담당자에게 알려 주세요");
+  return /[가-힣]/.test(m) ? t(m) : t("알림을 켜지 못했어요 ({msg})", { msg: m.slice(0, 80) });
 }
 
 // 칸을 비우고 새로 채운다. h() 와 같이 null·false 는 건너뛰고, 배열은 펼친다(replaceChildren 은 false 를 "false" 글자로 넣어서 쓰지 않음)
@@ -160,10 +167,10 @@ export async function pjSummary() {
 // people: pj.people() 행들. skip: 이미 참여 중이라 빼는 user_id 모음. 돌려주는 picked() 는 체크한 user_id 배열
 function peoplePicker(people, skip) {
   const list = (Array.isArray(people) ? people : []).filter((p) => p && p.user_id && !(skip && skip.has(p.user_id)));
-  if (!list.length) return { el: h("p", { class: "muted" }, "추가할 수 있는 직원이 없어요"), picked: () => [], empty: true };
+  if (!list.length) return { el: h("p", { class: "muted" }, t("추가할 수 있는 직원이 없어요")), picked: () => [], empty: true };
   const groups = new Map();
   for (const p of list) {
-    const g = String(p.store_name ?? "").trim() || "소속 없음";
+    const g = String(p.store_name ?? "").trim() || t("소속 없음");
     if (!groups.has(g)) groups.set(g, []);
     groups.get(g).push(p);
   }
@@ -172,13 +179,13 @@ function peoplePicker(people, skip) {
   const gs = [];
   const updateCount = () => {
     const n = all.filter((k) => k.cb.checked).length;
-    count.textContent = n ? `${n}명 선택` : "";
+    count.textContent = n ? t("{n}명 선택", { n }) : "";
   };
   for (const [gname, ps] of groups) {
-    const head = h("input", { type: "checkbox", "aria-label": `${gname} 전체 선택` });
+    const head = h("input", { type: "checkbox", "aria-label": t("{name} 전체 선택", { name: gname }) });
     const kids = ps.map((p) => {
       const cb = h("input", { type: "checkbox", value: p.user_id });
-      const who = h("span", null, p.display_name || "(이름 없음)", p.job_title ? h("span", { class: "muted" }, " " + p.job_title) : null);
+      const who = h("span", null, p.display_name || t("(이름 없음)"), p.job_title ? h("span", { class: "muted" }, " " + p.job_title) : null);
       const k = { cb, p, off: false, label: h("label", { class: "pj-pick-row" }, cb, who) };
       all.push(k);
       return k;
@@ -194,10 +201,10 @@ function peoplePicker(people, skip) {
       sync();
     });
     for (const k of kids) k.cb.addEventListener("change", sync);
-    const title = h("label", { class: "pj-pick-head" }, head, h("span", null, gname, h("span", { class: "muted" }, ` ${ps.length}명`)));
+    const title = h("label", { class: "pj-pick-head" }, head, h("span", null, gname, h("span", { class: "muted" }, " " + t("{n}명", { n: ps.length }))));
     gs.push({ kids, el: h("div", { class: "pj-pick-group" }, title, kids.map((k) => k.label)) });
   }
-  const filter = h("input", { class: "inp", type: "search", placeholder: "이름 검색", "aria-label": "직원 이름 검색", autocomplete: "off" });
+  const filter = h("input", { class: "inp", type: "search", placeholder: t("이름 검색"), "aria-label": t("직원 이름 검색"), autocomplete: "off" });
   filter.addEventListener("input", () => {
     const key = filter.value.trim().toLowerCase();
     for (const g of gs) {
@@ -219,14 +226,14 @@ function peoplePicker(people, skip) {
 // project 가 없으면 새로 만들기, 있으면 설정. 돌려주는 값: { changed, createdId?, deleted? }
 async function projectForm({ pj, prof, isTop, project }) {
   const edit = !!project;
-  const name = h("input", { class: "inp", type: "text", maxlength: "60", placeholder: "프로젝트 이름 (예: 신제품 출시)", "aria-label": "프로젝트 이름", autocomplete: "off" });
+  const name = h("input", { class: "inp", type: "text", maxlength: "60", placeholder: t("프로젝트 이름 (예: 신제품 출시)"), "aria-label": t("프로젝트 이름"), autocomplete: "off" });
   name.value = project?.name ?? "";
-  const descr = h("textarea", { class: "inp", rows: "3", maxlength: "500", placeholder: "설명 (선택)", "aria-label": "프로젝트 설명" });
+  const descr = h("textarea", { class: "inp", rows: "3", maxlength: "500", placeholder: t("설명 (선택)"), "aria-label": t("프로젝트 설명") });
   descr.value = project?.descr ?? "";
 
-  let color = safeColor(project?.color ?? COLORS[0][0]);
-  const swatches = COLORS.map(([c, nm]) => {
-    const b = h("button", { type: "button", class: "pj-sw", style: `--c:${c}`, title: nm, "aria-label": `${nm} 색` });
+  let color = safeColor(project?.color ?? DEFAULT_COLOR);
+  const swatches = colors().map(([c, nm]) => {
+    const b = h("button", { type: "button", class: "pj-sw", style: `--c:${c}`, title: nm, "aria-label": t("{name} 색", { name: nm }) });
     b.dataset.c = c;
     b.addEventListener("click", () => { color = c; paintSw(); });
     return b;
@@ -247,7 +254,7 @@ async function projectForm({ pj, prof, isTop, project }) {
   let picker = null, pickNote = "";
   if (!edit) {
     let people = [];
-    try { people = await pj.people(); } catch (e) { pickNote = "직원 명단을 불러오지 못했어요: " + msgOf(e); }
+    try { people = await pj.people(); } catch (e) { pickNote = t("직원 명단을 불러오지 못했어요: {msg}", { msg: msgOf(e) }); }
     picker = peoplePicker(people, new Set([prof.user_id]));
   }
 
@@ -266,31 +273,32 @@ async function projectForm({ pj, prof, isTop, project }) {
   if (edit) {
     const archived = project.status === "archived";
     danger = h("div", { class: "pj-danger" },
-      h("div", { class: "lbl" }, "프로젝트 관리"),
-      h("button", { type: "button", class: "btn ghost slim", onclick: () => trigger(archived ? "reopen" : "archive") }, archived ? "다시 열기" : "보관하기"),
-      prof.role === "owner" && h("button", { type: "button", class: "btn ghost slim danger", onclick: () => trigger("delete") }, "프로젝트 삭제 (대표만)"));
+      h("div", { class: "lbl" }, t("프로젝트 관리")),
+      h("button", { type: "button", class: "btn ghost slim", onclick: () => trigger(archived ? "reopen" : "archive") }, archived ? t("다시 열기") : t("보관하기")),
+      prof.role === "owner" && h("button", { type: "button", class: "btn ghost slim danger", onclick: () => trigger("delete") }, t("프로젝트 삭제 (대표만)")));
   }
 
   const content = h("div", { class: "stack pj-form" },
-    h("label", { class: "lbl" }, "이름"), name,
-    h("label", { class: "lbl" }, "설명"), descr,
-    h("div", { class: "lbl" }, "색"), h("div", { class: "pj-swatches" }, swatches),
-    isTop && h("label", { class: "pj-check" }, ai, h("span", null, "AI 질문에 이 프로젝트 글이 쓰여도 돼요")),
-    picker && h("div", { class: "lbl" }, "참여자 (나중에 추가해도 돼요)"),
+    h("label", { class: "lbl" }, t("이름")), name,
+    h("label", { class: "lbl" }, t("설명")), descr,
+    h("div", { class: "lbl" }, t("색")), h("div", { class: "pj-swatches" }, swatches),
+    isTop && h("label", { class: "pj-check" }, ai, h("span", null, t("AI 질문에 이 프로젝트 글이 쓰여도 돼요"))),
+    picker && h("div", { class: "lbl" }, t("참여자 (나중에 추가해도 돼요)")),
     pickNote && h("p", { class: "err" }, pickNote),
     picker && picker.el,
-    h("p", { class: "hint" }, NOTICE),
+    h("p", { class: "hint" }, notice()),
     danger);
 
   // 보관/다시 열기/삭제. 끝났으면 결과 객체, 취소하거나 실패하면 null(창을 다시 연다)
   async function runAction(a) {
     if (a === "archive" || a === "reopen") {
       const toArch = a === "archive";
-      const items = [project.name, toArch ? "보관하면 읽기만 되고, 새 글·댓글·파일을 올릴 수 없어요" : "다시 글·댓글·파일을 올릴 수 있어요"];
-      if (!(await confirmDialog(toArch ? "프로젝트를 보관할까요?" : "프로젝트를 다시 열까요?", items, "취소", toArch ? "보관하기" : "다시 열기"))) return null;
+      // 프로젝트 이름은 사용자가 쓴 글이라 글 노드로 넘긴다(확인창이 문장을 사전에서 찾아 바꾸는 일을 피한다)
+      const items = [document.createTextNode(String(project.name ?? "")), toArch ? t("보관하면 읽기만 되고, 새 글·댓글·파일을 올릴 수 없어요") : t("다시 글·댓글·파일을 올릴 수 있어요")];
+      if (!(await confirmDialog(toArch ? t("프로젝트를 보관할까요?") : t("프로젝트를 다시 열까요?"), items, t("취소"), toArch ? t("보관하기") : t("다시 열기")))) return null;
       try {
         await pj.updateProject(project.id, { status: toArch ? "archived" : "active" });
-        toast(toArch ? "보관했어요" : "다시 열었어요", 2000);
+        toast(toArch ? t("보관했어요") : t("다시 열었어요"), 2000);
         return { changed: true };
       } catch (e) {
         toast(msgOf(e), 5000);
@@ -298,24 +306,24 @@ async function projectForm({ pj, prof, isTop, project }) {
       }
     }
     if (a === "delete") {
-      if (!(await confirmDialog("프로젝트를 지울까요?", [project.name, "글·댓글·사진·파일이 모두 지워지고 되돌릴 수 없어요"], "취소", "계속"))) return null;
+      if (!(await confirmDialog(t("프로젝트를 지울까요?"), [document.createTextNode(String(project.name ?? "")), t("글·댓글·사진·파일이 모두 지워지고 되돌릴 수 없어요")], t("취소"), t("계속")))) return null;
       // 두 번째 확인은 이름을 직접 써야 넘어간다. 확인창 두 개가 같은 자리에 같은 단추를 띄워서, 연달아 두 번 눌러도 지워지는 일을 막는다
       const norm = (s) => String(s ?? "").replace(/\s+/g, " ").trim();
-      const typed = h("input", { class: "inp", type: "text", placeholder: "프로젝트 이름을 그대로 입력", "aria-label": "지울 프로젝트 이름 확인", autocomplete: "off" });
+      const typed = h("input", { class: "inp", type: "text", placeholder: t("프로젝트 이름을 그대로 입력"), "aria-label": t("지울 프로젝트 이름 확인"), autocomplete: "off" });
       const sure = h("div", { class: "stack" },
-        h("p", null, "마지막 확인이에요. 지운 뒤에는 되돌릴 방법이 없어요"),
+        h("p", null, t("마지막 확인이에요. 지운 뒤에는 되돌릴 방법이 없어요")),
         h("p", { style: "font-weight:800;overflow-wrap:anywhere" }, project.name),
-        h("p", { class: "hint" }, "위 이름을 똑같이 입력하고 [영구 삭제] 를 눌러 주세요"),
+        h("p", { class: "hint" }, t("위 이름을 똑같이 입력하고 [영구 삭제] 를 눌러 주세요")),
         typed);
       for (;;) {
-        if (!(await modal("정말 지울까요?", sure, "영구 삭제", "취소"))) return null;
+        if (!(await modal(t("정말 지울까요?"), sure, t("영구 삭제"), t("취소")))) return null;
         if (norm(typed.value) === norm(project.name)) break;
-        toast("프로젝트 이름이 달라요. 똑같이 입력해 주세요", 3000);
+        toast(t("프로젝트 이름이 달라요. 똑같이 입력해 주세요"), 3000);
       }
-      toast("지우는 중이에요. 파일이 많으면 시간이 걸려요", 20000);
+      toast(t("지우는 중이에요. 파일이 많으면 시간이 걸려요"), 20000);
       try {
         await pj.deleteProject(project.id);
-        toast("프로젝트를 지웠어요", 2500);
+        toast(t("프로젝트를 지웠어요"), 2500);
         return { changed: true, deleted: true };
       } catch (e) {
         toast(msgOf(e), 7000);
@@ -327,19 +335,19 @@ async function projectForm({ pj, prof, isTop, project }) {
 
   for (;;) {
     action = null;
-    if (!(await modal(edit ? "프로젝트 설정" : "새 프로젝트", content, edit ? "저장" : "만들기", "취소"))) return { changed: false };
+    if (!(await modal(edit ? t("프로젝트 설정") : t("새 프로젝트"), content, edit ? t("저장") : t("만들기"), t("취소")))) return { changed: false };
     if (action) {
       const r = await runAction(action);
       if (r) return r;
       continue;
     }
     const nm = name.value.trim();
-    if (!nm) { toast("프로젝트 이름을 넣어 주세요"); continue; }
+    if (!nm) { toast(t("프로젝트 이름을 넣어 주세요")); continue; }
     const ds = descr.value.trim();
     try {
       if (!edit) {
         const id = await pj.createProject({ name: nm, descr: ds, color, ai_ok: isTop ? ai.checked : true, member_ids: picker ? picker.picked() : [] });
-        toast("프로젝트를 만들었어요", 2000);
+        toast(t("프로젝트를 만들었어요"), 2000);
         return { changed: true, createdId: id };
       }
       const patch = {};
@@ -349,7 +357,7 @@ async function projectForm({ pj, prof, isTop, project }) {
       if (isTop && ai.checked !== (project.ai_ok !== false)) patch.ai_ok = ai.checked;
       if (!Object.keys(patch).length) return { changed: false };
       await pj.updateProject(project.id, patch);
-      toast("저장했어요", 1800);
+      toast(t("저장했어요"), 1800);
       return { changed: true };
     } catch (e) {
       // 프로젝트는 만들어졌는데 참여자 추가만 실패한 경우: 프로젝트는 남기고 그 화면으로 보낸다
@@ -375,14 +383,14 @@ async function renderMembers({ pane, ctx, live, onLeft }) {
     const admin = m.role === "admin";
     const acts = ctx.canAdmin && !mine
       ? h("div", { class: "pj-mem-acts" },
-        h("button", { type: "button", class: "linkbtn", onclick: () => toggleRole(m) }, admin ? "임직원으로 변경" : "관리자로 지정"),
-        h("button", { type: "button", class: "linkbtn bad-text", onclick: () => kick(m) }, "내보내기"))
+        h("button", { type: "button", class: "linkbtn", onclick: () => toggleRole(m) }, admin ? t("임직원으로 변경") : t("관리자로 지정")),
+        h("button", { type: "button", class: "linkbtn bad-text", onclick: () => kick(m) }, t("내보내기")))
       : null;
     return h("div", { class: "pj-mem" },
       h("div", { class: "pj-mem-main" },
-        h("div", { class: "pj-mem-name" }, m.user_name || "(이름 없음)", mine ? h("span", { class: "muted" }, " (나)") : null),
+        h("div", { class: "pj-mem-name" }, m.user_name || t("(이름 없음)"), mine ? h("span", { class: "muted" }, " " + t("(나)")) : null),
         m.job_title ? h("div", { class: "muted" }, m.job_title) : null),
-      h("span", { class: "pj-role " + (admin ? "admin" : "member") }, admin ? "프로젝트 관리자" : "임직원"),
+      h("span", { class: "pj-role " + (admin ? "admin" : "member") }, admin ? t("프로젝트 관리자") : t("임직원")),
       acts);
   }
 
@@ -392,20 +400,20 @@ async function renderMembers({ pane, ctx, live, onLeft }) {
     const list = [...state.list].sort((a, b) =>
       (a.role === b.role ? 0 : a.role === "admin" ? -1 : 1) || String(a.user_name ?? "").localeCompare(String(b.user_name ?? ""), "ko"));
     let body;
-    if (state.loading) body = h("p", { class: "muted" }, "불러오는 중…");
+    if (state.loading) body = h("p", { class: "muted" }, t("불러오는 중…"));
     else if (state.err) {
       body = h("div", null,
-        h("p", { class: "err" }, "불러오기 실패: " + state.err),
-        h("button", { type: "button", class: "btn ghost slim", onclick: () => { state.loading = true; state.err = ""; draw(); load(); } }, "다시 시도"));
-    } else if (!list.length) body = h("p", { class: "muted" }, "참여자가 없어요");
+        h("p", { class: "err" }, t("불러오기 실패: {msg}", { msg: state.err })),
+        h("button", { type: "button", class: "btn ghost slim", onclick: () => { state.loading = true; state.err = ""; draw(); load(); } }, t("다시 시도")));
+    } else if (!list.length) body = h("p", { class: "muted" }, t("참여자가 없어요"));
     else body = h("div", { class: "rowlist" }, list.map((m) => rowEl(m, me)));
     put(pane,
       h("div", { class: "pj-sec-head" },
-        h("h2", null, state.loading ? "참여자" : `참여자 ${state.list.length}명`),
-        ctx.canAdmin ? h("button", { type: "button", class: "pj-mini", onclick: () => addPeople() }, "+ 참여자 추가") : null),
+        h("h2", null, state.loading ? t("참여자") : t("참여자 {n}명", { n: state.list.length })),
+        ctx.canAdmin ? h("button", { type: "button", class: "pj-mini", onclick: () => addPeople() }, "+ " + t("참여자 추가")) : null),
       body,
-      ctx.myRole ? h("button", { type: "button", class: "btn ghost slim danger", style: "margin-top:14px", onclick: () => leave() }, "프로젝트 나가기") : null,
-      h("p", { class: "hint", style: "margin-top:10px" }, MEMBERS_NOTE));
+      ctx.myRole ? h("button", { type: "button", class: "btn ghost slim danger", style: "margin-top:14px", onclick: () => leave() }, t("프로젝트 나가기")) : null,
+      h("p", { class: "hint", style: "margin-top:10px" }, membersNote()));
     scrollTo(0, y);
   }
 
@@ -419,14 +427,14 @@ async function renderMembers({ pane, ctx, live, onLeft }) {
     let people = [];
     try { people = await pj.people(); } catch (e) { toast(msgOf(e), 5000); return; }
     const picker = peoplePicker(people, new Set(state.list.map((m) => m.user_id)));
-    const content = h("div", { class: "stack" }, picker.el, h("p", { class: "hint" }, NOTICE));
+    const content = h("div", { class: "stack" }, picker.el, h("p", { class: "hint" }, notice()));
     for (;;) {
-      if (!(await modal("참여자 추가", content, "추가", "취소"))) return;
+      if (!(await modal(t("참여자 추가"), content, t("추가"), t("취소")))) return;
       const ids = picker.picked();
-      if (!ids.length) { toast("추가할 사람을 골라 주세요"); continue; }
+      if (!ids.length) { toast(t("추가할 사람을 골라 주세요")); continue; }
       try {
         const n = await pj.addMembers(ctx.project.id, ids);
-        toast(n ? `${n}명을 추가했어요` : "이미 모두 참여 중이에요", 2200);
+        toast(n ? t("{n}명을 추가했어요", { n }) : t("이미 모두 참여 중이에요"), 2200);
         await refresh();
         return;
       } catch (e) {
@@ -435,22 +443,25 @@ async function renderMembers({ pane, ctx, live, onLeft }) {
     }
   }
 
+  // 확인창에 넣는 이름은 사용자가 쓴 글이라 글 노드로 넘긴다(확인창이 문장을 사전에서 찾아 바꾸는 일을 피한다)
+  const nameLine = (m) => (m.user_name ? document.createTextNode(m.user_name) : t("(이름 없음)"));
+
   async function toggleRole(m) {
     const to = m.role === "admin" ? "member" : "admin";
-    const items = [m.user_name || "(이름 없음)", to === "admin" ? "참여자 추가·내보내기, 남의 글 삭제, 상단고정을 할 수 있어요" : "프로젝트 관리 권한이 없어져요"];
-    if (!(await confirmDialog(to === "admin" ? "프로젝트 관리자로 지정할까요?" : "임직원으로 바꿀까요?", items, "취소", "바꾸기"))) return;
+    const items = [nameLine(m), to === "admin" ? t("참여자 추가·내보내기, 남의 글 삭제, 상단고정을 할 수 있어요") : t("프로젝트 관리 권한이 없어져요")];
+    if (!(await confirmDialog(to === "admin" ? t("프로젝트 관리자로 지정할까요?") : t("임직원으로 바꿀까요?"), items, t("취소"), t("바꾸기")))) return;
     try {
       await pj.setRole(ctx.project.id, m.user_id, to);
-      toast("역할을 바꿨어요", 1800);
+      toast(t("역할을 바꿨어요"), 1800);
       await refresh();
     } catch (e) { toast(msgOf(e), 5000); }
   }
 
   async function kick(m) {
-    if (!(await confirmDialog("내보낼까요?", [m.user_name || "(이름 없음)", "올린 글과 파일은 그대로 남아요"], "취소", "내보내기"))) return;
+    if (!(await confirmDialog(t("내보낼까요?"), [nameLine(m), t("올린 글과 파일은 그대로 남아요")], t("취소"), t("내보내기")))) return;
     try {
       await pj.removeMember(ctx.project.id, m.user_id);
-      toast("내보냈어요", 1800);
+      toast(t("내보냈어요"), 1800);
       await refresh();
     } catch (e) { toast(msgOf(e), 5000); }
   }
@@ -458,12 +469,12 @@ async function renderMembers({ pane, ctx, live, onLeft }) {
   async function leave() {
     const adminN = state.list.filter((m) => m.role === "admin").length;
     const lastAdmin = ctx.myRole === "admin" && !ctx.isTop && adminN <= 1;
-    const items = [ctx.project.name, "나가도 내가 쓴 글과 파일은 그대로 남아요"];
-    if (lastAdmin) items.push("내가 마지막 프로젝트 관리자예요. 나가면 대표·부대표만 참여자를 관리할 수 있어요");
-    if (!(await confirmDialog("프로젝트에서 나갈까요?", items, "취소", "나가기"))) return;
+    const items = [document.createTextNode(String(ctx.project.name ?? "")), t("나가도 내가 쓴 글과 파일은 그대로 남아요")];
+    if (lastAdmin) items.push(t("내가 마지막 프로젝트 관리자예요. 나가면 대표·부대표만 참여자를 관리할 수 있어요"));
+    if (!(await confirmDialog(t("프로젝트에서 나갈까요?"), items, t("취소"), t("나가기")))) return;
     try {
       await pj.leave(ctx.project.id);
-      toast("프로젝트에서 나왔어요", 2000);
+      toast(t("프로젝트에서 나왔어요"), 2000);
       onLeft();
     } catch (e) { toast(msgOf(e), 5000); }
   }
@@ -547,9 +558,9 @@ export async function renderProjects(root, opts = {}) {
     showList();
   }
 
-  const outerBack = () => (opts.onBack ? h("button", { type: "button", class: "linkbtn back", onclick: () => opts.onBack() }, "← 목록") : null);
+  const outerBack = () => (opts.onBack ? h("button", { type: "button", class: "linkbtn back", onclick: () => opts.onBack() }, t("← 목록")) : null);
 
-  root.replaceChildren(h("div", { class: "page" }, outerBack(), h("p", { class: "muted" }, "불러오는 중…")));
+  root.replaceChildren(h("div", { class: "page" }, outerBack(), h("p", { class: "muted" }, t("불러오는 중…"))));
   try {
     if (typeof api.pj !== "function") throw new Error("프로젝트 기능을 쓸 수 없어요");
     pj = await api.pj();
@@ -557,8 +568,9 @@ export async function renderProjects(root, opts = {}) {
   } catch (e) {
     if (!alive()) return;
     const m = String((e && e.message) || "");
-    const text = /[가-힣]/.test(m) ? m : "프로젝트를 불러오지 못했어요" + (m ? ` (${m.slice(0, 100)})` : "");
-    root.replaceChildren(h("div", { class: "page" }, outerBack(), h("h1", null, "📋 프로젝트"), h("p", { class: "err" }, text)));
+    // 한국어 오류(api.js 의 안내, 화면 언어로 이미 바뀐 pj-api.js 의 오류)는 그대로 보이고, 그 밖의 오류는 앞에 안내를 붙인다
+    const text = /[가-힣]/.test(m) || (e && e.pjKorean && m) ? t(m) : t("프로젝트를 불러오지 못했어요") + (m ? ` (${m.slice(0, 100)})` : "");
+    root.replaceChildren(h("div", { class: "page" }, outerBack(), h("h1", null, "📋 " + t("프로젝트")), h("p", { class: "err" }, text)));
     return;
   }
   if (!alive()) return;
@@ -578,7 +590,7 @@ export async function renderProjects(root, opts = {}) {
   }
 
   function drawListShell() {
-    const search = h("input", { class: "inp", type: "search", placeholder: "프로젝트 이름 검색", "aria-label": "프로젝트 이름 검색", autocomplete: "off" });
+    const search = h("input", { class: "inp", type: "search", placeholder: t("프로젝트 이름 검색"), "aria-label": t("프로젝트 이름 검색"), autocomplete: "off" });
     search.value = q;
     search.addEventListener("input", () => { q = search.value; drawGrid(); });
     const chipsBox = h("div", { class: "pj-chips" });
@@ -589,13 +601,13 @@ export async function renderProjects(root, opts = {}) {
     root.replaceChildren(h("div", { class: "page" },
       outerBack(),
       h("div", { class: "pj-top" },
-        h("h1", null, "📋 프로젝트"),
-        h("button", { type: "button", class: "pj-mini", onclick: () => { usageAt = 0; loadUsage(); loadList({ manual: true }); } }, "↻ 새로고침")),
+        h("h1", null, "📋 " + t("프로젝트")),
+        h("button", { type: "button", class: "pj-mini", onclick: () => { usageAt = 0; loadUsage(); loadList({ manual: true }); } }, "↻ " + t("새로고침"))),
       usageBox,
       pushBox,
       search,
       chipsBox,
-      h("button", { type: "button", class: "btn primary", onclick: () => newProject() }, "+ 새 프로젝트"),
+      h("button", { type: "button", class: "btn primary", onclick: () => newProject() }, "+ " + t("새 프로젝트")),
       gridBox));
     drawPushBox();
     drawUsage();
@@ -611,14 +623,14 @@ export async function renderProjects(root, opts = {}) {
     if (!need) { put(shell.pushBox); return; }
     put(shell.pushBox,
       h("div", { class: "pj-banner" },
-        h("span", null, "새 글 알림을 받으려면 알림을 켜 주세요"),
-        h("button", { type: "button", class: "pj-mini", onclick: (ev) => turnOnPush(ev.currentTarget) }, "🔔 알림 켜기")),
+        h("span", null, t("새 글 알림을 받으려면 알림을 켜 주세요")),
+        h("button", { type: "button", class: "pj-mini", onclick: (ev) => turnOnPush(ev.currentTarget) }, "🔔 " + t("알림 켜기"))),
       pushHint ? h("p", { class: "err" }, pushHint) : null);
   }
 
   async function turnOnPush(btn) {
     if (inAppBrowser()) {
-      pushHint = IN_APP_HINT;
+      pushHint = inAppHint();
       drawPushBox();
       return;
     }
@@ -626,11 +638,11 @@ export async function renderProjects(root, opts = {}) {
     try {
       await api.enablePush();
       pushHint = "";
-      toast("알림을 켰어요", 2000);
+      toast(t("알림을 켰어요"), 2000);
     } catch (e) {
       console.warn("[projects] 알림 켜기 실패:", e);
       pushHint = pushErrText(e);
-      toast("알림을 켜지 못했어요", 2500);
+      toast(t("알림을 켜지 못했어요"), 2500);
     }
     if (alive() && view === "list") drawPushBox();
   }
@@ -648,7 +660,7 @@ export async function renderProjects(root, opts = {}) {
       const u = await pj.usage();
       const bytes = u ? Number(u.bytes) : NaN;
       if (Number.isFinite(bytes) && bytes >= 0) {
-        usageText = `저장 공간 약 ${fmtMB(bytes)} MB 사용`;
+        usageText = t("저장 공간 약 {mb} MB 사용", { mb: fmtMB(bytes) });
         usageAt = Date.now();
       } else usageText = "";
     } catch {
@@ -660,27 +672,27 @@ export async function renderProjects(root, opts = {}) {
 
   function drawChips() {
     if (!shell) return;
-    const defs = [["joined", "참여 중"], ...(isTop ? [["all", "전체"]] : []), ["arch", "보관"]];
+    const defs = [["joined", t("참여 중")], ...(isTop ? [["all", t("전체")]] : []), ["arch", t("보관")]];
     put(shell.chipsBox, defs.map(([k, label]) =>
       h("button", { type: "button", class: "chip" + (chip === k ? " on" : ""), "aria-pressed": chip === k ? "true" : "false", onclick: () => { chip = k; drawChips(); drawGrid(); } }, label)));
   }
 
   function emptyText(key) {
-    if (key) return "찾는 프로젝트가 없어요";
-    if (chip === "arch") return "보관한 프로젝트가 없어요";
-    if (chip === "joined" && !isTop) return "참여 중인 프로젝트가 없어요. [+ 새 프로젝트]로 만들거나, 만든 사람에게 참여를 요청해 주세요";
-    if (chip === "joined" && rows.some((r) => r.status === "active")) return "참여 중인 프로젝트가 없어요. [전체]에서 프로젝트를 열어 [참여하기]를 눌러 보세요";
-    return "아직 프로젝트가 없어요. [+ 새 프로젝트]로 만들어 보세요";
+    if (key) return t("찾는 프로젝트가 없어요");
+    if (chip === "arch") return t("보관한 프로젝트가 없어요");
+    if (chip === "joined" && !isTop) return t("참여 중인 프로젝트가 없어요. [+ 새 프로젝트]로 만들거나, 만든 사람에게 참여를 요청해 주세요");
+    if (chip === "joined" && rows.some((r) => r.status === "active")) return t("참여 중인 프로젝트가 없어요. [전체]에서 프로젝트를 열어 [참여하기]를 눌러 보세요");
+    return t("아직 프로젝트가 없어요. [+ 새 프로젝트]로 만들어 보세요");
   }
 
   function drawGrid() {
     if (!shell || view !== "list" || !alive()) return;
     const box = shell.gridBox;
-    if (loading && !rows.length) { put(box, h("p", { class: "muted" }, "불러오는 중…")); return; }
+    if (loading && !rows.length) { put(box, h("p", { class: "muted" }, t("불러오는 중…"))); return; }
     if (err && !rows.length) {
       put(box,
-        h("p", { class: "err" }, "불러오기 실패: " + err),
-        h("button", { type: "button", class: "btn ghost slim", onclick: () => loadList({ manual: true }) }, "다시 시도"));
+        h("p", { class: "err" }, t("불러오기 실패: {msg}", { msg: err })),
+        h("button", { type: "button", class: "btn ghost slim", onclick: () => loadList({ manual: true }) }, t("다시 시도")));
       return;
     }
     const key = q.trim().toLowerCase();
@@ -706,11 +718,11 @@ export async function renderProjects(root, opts = {}) {
       onkeydown: (ev) => { if ((ev.key === "Enter" || ev.key === " ") && ev.target === el) { ev.preventDefault(); open(); } },
     },
     h("div", { class: "pj-card-bar" }),
-    n > 0 ? h("span", { class: "pj-new", "aria-label": `새 글 ${n}개` }, n > 99 ? "99+" : String(n)) : null,
+    n > 0 ? h("span", { class: "pj-new", "aria-label": t("새 글 {n}개", { n }) }, n > 99 ? "99+" : String(n)) : null,
     h("div", { class: "pj-card-name" }, r.name),
-    h("div", { class: "pj-card-meta" }, `👥 ${Number(r.members) || 0}명`, r.status === "archived" ? h("span", { class: "pj-tag" }, "보관됨") : null),
-    h("div", { class: "pj-card-meta" }, r.last_post_at ? `최근 글 ${fmtDay(r.last_post_at)}` : "아직 글이 없어요"),
-    member ? null : h("button", { type: "button", class: "btn ghost pj-join", onclick: (ev) => { ev.stopPropagation(); joinFromCard(r, ev.currentTarget); } }, "참여하기"));
+    h("div", { class: "pj-card-meta" }, t("👥 {n}명", { n: Number(r.members) || 0 }), r.status === "archived" ? h("span", { class: "pj-tag" }, t("보관됨")) : null),
+    h("div", { class: "pj-card-meta" }, r.last_post_at ? t("최근 글 {date}", { date: fmtDay(r.last_post_at) }) : t("아직 글이 없어요")),
+    member ? null : h("button", { type: "button", class: "btn ghost pj-join", onclick: (ev) => { ev.stopPropagation(); joinFromCard(r, ev.currentTarget); } }, t("참여하기")));
     return el;
   }
 
@@ -739,7 +751,7 @@ export async function renderProjects(root, opts = {}) {
     btn.disabled = true;
     try {
       await pj.join(r.id);
-      toast("참여했어요", 1800);
+      toast(t("참여했어요"), 1800);
       await loadList({ manual: true });
     } catch (e) {
       toast(msgOf(e), 5000);
@@ -802,8 +814,8 @@ export async function renderProjects(root, opts = {}) {
 
   function drawSkeleton() {
     root.replaceChildren(h("div", { class: "page pj-page" },
-      h("div", { class: "pj-head-row" }, h("button", { type: "button", class: "pj-mini", onclick: () => backToList() }, "← 목록")),
-      h("p", { class: "muted" }, "불러오는 중…")));
+      h("div", { class: "pj-head-row" }, h("button", { type: "button", class: "pj-mini", onclick: () => backToList() }, t("← 목록"))),
+      h("p", { class: "muted" }, t("불러오는 중…"))));
   }
 
   async function enter(session) {
@@ -821,9 +833,9 @@ export async function renderProjects(root, opts = {}) {
     } catch (e) {
       if (!mine(session)) return;
       root.replaceChildren(h("div", { class: "page pj-page" },
-        h("div", { class: "pj-head-row" }, h("button", { type: "button", class: "pj-mini", onclick: () => backToList() }, "← 목록")),
-        h("p", { class: "err" }, "불러오기 실패: " + msgOf(e)),
-        h("button", { type: "button", class: "btn ghost slim", onclick: () => { drawSkeleton(); enter(session); } }, "다시 시도")));
+        h("div", { class: "pj-head-row" }, h("button", { type: "button", class: "pj-mini", onclick: () => backToList() }, t("← 목록"))),
+        h("p", { class: "err" }, t("불러오기 실패: {msg}", { msg: msgOf(e) })),
+        h("button", { type: "button", class: "btn ghost slim", onclick: () => { drawSkeleton(); enter(session); } }, t("다시 시도"))));
       return;
     }
     buildCtx(session, row);
@@ -896,7 +908,7 @@ export async function renderProjects(root, opts = {}) {
 
   function drawProject(session) {
     session.head = h("div", { class: "pj-head" });
-    session.tabsBox = h("div", { class: "pj-tabs", role: "tablist", "aria-label": "프로젝트 메뉴" });
+    session.tabsBox = h("div", { class: "pj-tabs", role: "tablist", "aria-label": t("프로젝트 메뉴") });
     session.body = h("div", { class: "pj-body" });
     root.replaceChildren(h("div", { class: "page pj-page" }, session.head, session.tabsBox, session.body));
     drawHead(session);
@@ -907,16 +919,16 @@ export async function renderProjects(root, opts = {}) {
   function drawHead(session) {
     const ctx = session.ctx;
     const p = ctx.project;
-    const descr = h("p", { class: "pj-descr", title: "눌러서 펼치기" }, p.descr);
+    const descr = h("p", { class: "pj-descr", title: t("눌러서 펼치기") }, p.descr);
     descr.addEventListener("click", () => descr.classList.toggle("open"));
     const banners = [];
     if (!ctx.myRole) {
       banners.push(h("div", { class: "pj-banner" },
-        h("span", null, "이 프로젝트에는 참여하지 않았어요. 보기만 할 수 있어요."),
-        h("button", { type: "button", class: "pj-mini", onclick: (ev) => joinHere(session, ev.currentTarget) }, "참여하기")));
+        h("span", null, t("이 프로젝트에는 참여하지 않았어요. 보기만 할 수 있어요.")),
+        h("button", { type: "button", class: "pj-mini", onclick: (ev) => joinHere(session, ev.currentTarget) }, t("참여하기"))));
     }
     if (p.status === "archived") {
-      banners.push(h("div", { class: "pj-banner" }, h("span", null, "보관된 프로젝트예요. 읽기만 할 수 있고 새 글·댓글·파일은 올릴 수 없어요.")));
+      banners.push(h("div", { class: "pj-banner" }, h("span", null, t("보관된 프로젝트예요. 읽기만 할 수 있고 새 글·댓글·파일은 올릴 수 없어요."))));
     }
     // 참여자만, 알림이 가는 진행 중 프로젝트에서만
     const bell = ctx.myRole && p.status === "active"
@@ -924,19 +936,19 @@ export async function renderProjects(root, opts = {}) {
         h("button", {
           type: "button", class: "pj-mini" + (session.muted ? " off" : ""), disabled: !!session.muteBusy,
           onclick: (ev) => toggleMute(session, ev.currentTarget),
-        }, session.muted ? "🔕 이 프로젝트 알림 켜기" : "🔔 이 프로젝트 알림 끄기"))
+        }, session.muted ? "🔕 " + t("이 프로젝트 알림 켜기") : "🔔 " + t("이 프로젝트 알림 끄기")))
       : null;
     put(session.head,
       h("div", { class: "pj-head-row" },
-        h("button", { type: "button", class: "pj-mini", onclick: () => backToList() }, "← 목록"),
+        h("button", { type: "button", class: "pj-mini", onclick: () => backToList() }, t("← 목록")),
         h("span", { class: "grow" }),
-        h("button", { type: "button", class: "pj-mini", onclick: () => refreshAll(session) }, "↻ 새로고침"),
-        ctx.canAdmin ? h("button", { type: "button", class: "pj-mini", onclick: () => openSettings(session) }, "⚙ 설정") : null),
+        h("button", { type: "button", class: "pj-mini", onclick: () => refreshAll(session) }, "↻ " + t("새로고침")),
+        ctx.canAdmin ? h("button", { type: "button", class: "pj-mini", onclick: () => openSettings(session) }, "⚙ " + t("설정")) : null),
       h("div", { class: "pj-title" },
         h("span", { class: "pj-dot", style: `background:${safeColor(p.color)}` }),
         h("h1", null, p.name)),
       p.descr ? descr : null,
-      h("div", { class: "muted pj-meta" }, `👥 참여 ${Number(p.members) || 0}명`),
+      h("div", { class: "muted pj-meta" }, t("👥 참여 {n}명", { n: Number(p.members) || 0 })),
       bell,
       banners);
   }
@@ -951,7 +963,7 @@ export async function renderProjects(root, opts = {}) {
       await pj.setMuted(session.pid, to);
       session.muted = to;
       if (session.ctx) session.ctx.muted = to;
-      toast(to ? "이 프로젝트 알림을 껐어요" : "이 프로젝트 알림을 켰어요", 1800);
+      toast(to ? t("이 프로젝트 알림을 껐어요") : t("이 프로젝트 알림을 켰어요"), 1800);
     } catch (e) {
       toast(msgOf(e), 5000);
     }
@@ -960,7 +972,7 @@ export async function renderProjects(root, opts = {}) {
   }
 
   function drawTabs(session) {
-    put(session.tabsBox, TABS.map(([k, label]) =>
+    put(session.tabsBox, tabs().map(([k, label]) =>
       h("button", {
         type: "button", role: "tab", "aria-selected": session.tab === k ? "true" : "false",
         class: "pj-tab" + (session.tab === k ? " on" : ""), onclick: () => switchTab(session, k),
@@ -968,7 +980,7 @@ export async function renderProjects(root, opts = {}) {
   }
 
   function switchTab(session, k) {
-    if (!mine(session) || session.tab === k || !TABS.some((t) => t[0] === k)) return;
+    if (!mine(session) || session.tab === k || !TAB_KEYS.includes(k)) return;
     session.tab = k;
     session.postId = null; // 알림에서 열린 글 이동은 처음 피드 그림에만
     if (session.ctx) session.ctx.postId = null;
@@ -981,7 +993,7 @@ export async function renderProjects(root, opts = {}) {
     if (!mine(session)) return;
     runLeave(session); // 떠나는 탭이 맡긴 마무리(읽음 전송 등)를 칸을 바꾸기 전에 실행
     const tab = session.tab;
-    const pane = h("div", { class: "pj-pane" }, h("p", { class: "muted" }, "불러오는 중…"));
+    const pane = h("div", { class: "pj-pane" }, h("p", { class: "muted" }, t("불러오는 중…")));
     session.pane = pane;
     put(session.body, pane);
     const live = () => cur === session && session.pane === pane && alive();
@@ -1004,9 +1016,9 @@ export async function renderProjects(root, opts = {}) {
       if (!live()) return;
       console.error("[projects] 탭을 그리지 못했어요:", tab, e);
       put(pane,
-        h("p", { class: "err" }, "이 화면을 불러오지 못했어요. 앱을 새로고침한 뒤 다시 시도해 주세요."),
-        h("p", { class: "muted" }, String((e && e.message) || e).slice(0, 160)),
-        h("button", { type: "button", class: "btn ghost slim", onclick: () => showTab(session) }, "다시 시도"));
+        h("p", { class: "err" }, t("이 화면을 불러오지 못했어요. 앱을 새로고침한 뒤 다시 시도해 주세요.")),
+        h("p", { class: "muted" }, t(String((e && e.message) || e)).slice(0, 160)),
+        h("button", { type: "button", class: "btn ghost slim", onclick: () => showTab(session) }, t("다시 시도")));
     }
   }
 
@@ -1019,7 +1031,7 @@ export async function renderProjects(root, opts = {}) {
       // 방금 참여했으니 옛 글은 모두 읽은 것으로 본다(서버가 정한 시각을 기준으로)
       session.lastRead = (mem && mem.last_read_at) || new Date().toISOString();
       session.muted = !!(mem && mem.muted);
-      toast("참여했어요", 1800);
+      toast(t("참여했어요"), 1800);
       await refreshAll(session);
     } catch (e) {
       toast(msgOf(e), 5000);

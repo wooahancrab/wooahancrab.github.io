@@ -2,8 +2,9 @@
 // 글·이름·파일 이름은 모두 글자로만 화면에 넣는다(innerHTML 안 씀). 피드 영역만 다시 그려서 열어 둔 댓글칸이 남는다.
 // 읽음: 프로젝트를 여는 것만으로는 읽음이 아니다. 글이 화면에 0.8초 이상 보이면 읽은 것으로 모아 두었다가 한꺼번에 저장한다.
 import { h, toast, modal, confirmDialog, copyText } from "../lib/ui.js";
-import { dateOf, fmtHM, labelMDKo as labelMD, todayKST } from "../lib/kst.js";
+import { dateOf, fmtDur, fmtHM, labelMD, todayKST } from "../lib/kst.js";
 import { ALLOWED_EXT, checkFile, isImage, openLightbox } from "../lib/img.js";
+import { t, tx, lang } from "../lib/i18n.js";
 
 const PAGE = 20;
 const MAX_PHOTOS = 10;
@@ -21,6 +22,36 @@ const URL_RE = /https?:\/\/[A-Za-z0-9\-._~:\/?#[\]@!$&'()*+,;=%]+/gi;
 
 /* ---------------- 작은 도우미 ---------------- */
 
+// 서버·api(pj-api.js)·img.js 가 준 한국어 오류 문구를 화면 언어로. 값이 들어간 문구는 틀을 찾아 값을 채운다. 한국어 화면에서는 그대로 둔다.
+// 파일 이름 자리는 사용자 데이터라 번역하지 않는다(이름이 비어 img.js 가 '파일'로 채운 경우만 번역).
+const fileLabel = (s) => (s === "파일" ? t("파일") : s);
+// 서버가 '다시 알림'을 기다리라며 주는 남은 시간("1시간 5분", "45분")을 분으로 바꿔 화면 언어의 시간 표기로 만든다
+const waitMin = (s) => (/(\d+)시간/.exec(s) ? Number(/(\d+)시간/.exec(s)[1]) * 60 : 0) + (/(\d+)분/.exec(s) ? Number(/(\d+)분/.exec(s)[1]) : 0);
+const ERR_PATTERNS = [
+  [/^([\s\S]*): 내용이 비어 있는 파일이에요$/, "{name}: 내용이 비어 있는 파일이에요", ["name"], (p) => { p.name = fileLabel(p.name); }],
+  [/^([\s\S]*): 20MB보다 커서 올릴 수 없어요 \(([\d.]+)MB\)$/, "{name}: 20MB보다 커서 올릴 수 없어요 ({size}MB)", ["name", "size"], (p) => { p.name = fileLabel(p.name); }],
+  [/^([\s\S]*): 파일 이름 끝의 공백을 지운 뒤 올려 주세요$/, "{name}: 파일 이름 끝의 공백을 지운 뒤 올려 주세요", ["name"], (p) => { p.name = fileLabel(p.name); }],
+  [/^([\s\S]*): 확장자가 없는 파일은 올릴 수 없어요$/, "{name}: 확장자가 없는 파일은 올릴 수 없어요", ["name"], (p) => { p.name = fileLabel(p.name); }],
+  [/^([\s\S]*): 올릴 수 없는 파일 형식이에요 \(사진·pdf·문서·엑셀·ppt·hwp·txt·csv·zip만 가능해요\)$/, "{name}: 올릴 수 없는 파일 형식이에요 (사진·pdf·문서·엑셀·ppt·hwp·txt·csv·zip만 가능해요)", ["name"], (p) => { p.name = fileLabel(p.name); }],
+  [/^이 글은 방금 알림을 보냈어요\. ((?:\d+시간)?(?: ?\d+분)?) 뒤에 다시 보낼 수 있어요$/, "이 글은 방금 알림을 보냈어요. {w} 뒤에 다시 보낼 수 있어요", ["w"], (p) => { p.w = fmtDur(waitMin(p.w)); }],
+];
+function errText(msg) {
+  if (lang() === "ko" || typeof msg !== "string") return msg;
+  const hit = t(msg);
+  if (hit !== msg) return hit;
+  for (const [re, key, names, fix] of ERR_PATTERNS) {
+    const m = re.exec(msg);
+    if (!m) continue;
+    const p = Object.fromEntries(names.map((k, i) => [k, m[i + 1]]));
+    if (fix) fix(p);
+    return t(key, p);
+  }
+  // pj-api.js 가 못 알아본 오류에 붙이는 "안내 문구 (자세한 원인)": 앞의 안내 문구만 번역하고 원인은 그대로 둔다
+  const m = /^([^()]+?) \(([\s\S]*)\)$/.exec(msg);
+  if (m && t(m[1]) !== m[1]) return `${t(m[1])} (${m[2]})`;
+  return msg;
+}
+
 // 시각 → 밀리초. 서버가 주는 마이크로초(소수 6자리)는 브라우저마다 읽는 방식이 달라 3자리로 줄여서 읽는다
 const ts = (s) => { const t = Date.parse(String(s ?? "").replace(/(\.\d{3})\d+/, "$1")); return Number.isNaN(t) ? 0 : t; };
 const clip = (s, n) => { const a = [...String(s ?? "")]; return a.length > n ? a.slice(0, n - 1).join("") + "…" : a.join(""); };
@@ -37,12 +68,12 @@ const iconOf = (f) => {
   return "📎";
 };
 
-// 한국시간 표시: 올해가 아니면 연도(두 자리)를 앞에 붙인다
+// 한국시간 표시: 올해가 아니면 연도(두 자리)를 앞에 붙인다 (한국어 "25년 11/13(금) 14:30" · 다른 언어는 "2025/11/13(Fri) 14:30")
 function fmtWhen(iso) {
   try {
     const d = dateOf(iso);
-    const yy = d.slice(0, 4) === todayKST().slice(0, 4) ? "" : d.slice(2, 4) + "년 ";
-    return `${yy}${labelMD(d)} ${fmtHM(iso)}`;
+    const old = d.slice(0, 4) !== todayKST().slice(0, 4);
+    return old ? t("{y}년 {md} {hm}", { y: d.slice(2, 4), md: labelMD(d), hm: fmtHM(iso) }) : `${labelMD(d)} ${fmtHM(iso)}`;
   } catch { return ""; }
 }
 
@@ -68,18 +99,19 @@ function locs(text) {
   if (!lines.length) return null;
   return h("div", { class: "pj-fd-locs" }, lines.map((s) => {
     if (/^https?:\/\//i.test(s)) return h("div", { class: "pj-fd-loc" }, h("a", { href: s, target: "_blank", rel: "noopener noreferrer" }, "🔗 " + s));
-    const copy = async () => { toast((await copyText(s)) ? "경로를 복사했어요. 탐색기 주소창에 붙여넣으세요" : "복사하지 못했어요", 3000); };
-    return h("div", { class: "pj-fd-loc" }, "📁 " + s + " ", h("button", { type: "button", class: "linkbtn", onclick: copy }, "복사"));
+    const copy = async () => { toast((await copyText(s)) ? t("경로를 복사했어요. 탐색기 주소창에 붙여넣으세요") : t("복사하지 못했어요"), 3000); };
+    return h("div", { class: "pj-fd-loc" }, "📁 " + s + " ", h("button", { type: "button", class: "linkbtn", onclick: copy }, t("복사")));
   }));
 }
 
 // 회의록 양식: 일시·참석자·안건·결정사항·할 일
 function minutesParts() {
   const d = todayKST();
-  const dw = labelMD(d).replace(/^[^(]*/, ""); // "(월)"
+  const dw = labelMD(d).replace(/^[^(]*/, ""); // "(월)" · "(T2)" · "(Mon)"
   const ymd = d.replace(/-/g, ".");
   const when = `${ymd}${dw} ${fmtHM(new Date().toISOString())}`;
-  const body = ["■ 일시: " + when, "■ 참석자: ", "", "■ 안건", "1. ", "", "■ 결정사항", "- ", "", "■ 할 일 (담당자 / 기한)", "- "].join("\n");
+  // 양식의 머리말은 쓰는 사람의 화면 언어로 채운다(글쓴이가 그 언어로 이어서 적는다)
+  const body = ["■ " + t("일시:") + " " + when, "■ " + t("참석자:") + " ", "", "■ " + t("안건"), "1. ", "", "■ " + t("결정사항"), "- ", "", "■ " + t("할 일 (담당자 / 기한)"), "- "].join("\n");
   return { ymd, body };
 }
 
@@ -129,10 +161,10 @@ function progressDlg(title, text) {
   const sub = h("p", { class: "muted pj-fd-prog-sub" });
   const ov = h("div", { class: "overlay" },
     h("div", { class: "dialog", role: "alertdialog", "aria-modal": "true", "aria-busy": "true" },
-      h("h2", null, title), line, sub, h("p", { class: "hint" }, "창을 닫지 말고 기다려 주세요")));
+      h("h2", null, title), line, sub, h("p", { class: "hint" }, t("창을 닫지 말고 기다려 주세요"))));
   document.body.append(ov);
   return {
-    set(t, s = "") { line.textContent = t; sub.textContent = s; },
+    set(msg, s = "") { line.textContent = msg; sub.textContent = s; },
     close() { ov.remove(); },
   };
 }
@@ -145,7 +177,7 @@ function notice(title, lines) {
       h("div", { class: "dialog", role: "dialog", "aria-modal": "true" },
         h("h2", null, title),
         h("ul", null, lines.map((l) => h("li", null, l))),
-        h("button", { class: "btn primary", onclick: close }, "확인")));
+        h("button", { class: "btn primary", onclick: close }, t("확인"))));
     document.body.append(ov);
   });
 }
@@ -154,9 +186,10 @@ function notice(title, lines) {
 function nudgeMsg(e) {
   const msg = (e && e.message) || "알림을 보내지 못했어요";
   const sec = e && e.code === "wait" ? Number(e.retry_after) : 0;
-  if (!(sec > 0) || /뒤|후/.test(msg)) return msg;
-  const t = sec >= 3600 ? `약 ${Math.ceil(sec / 3600)}시간` : `약 ${Math.max(1, Math.ceil(sec / 60))}분`;
-  return `${msg} (${t} 뒤에 다시 보낼 수 있어요)`;
+  // 한글이 없는 메시지는 pj-api.js 가 이미 화면 언어로 바꾼 것(알려진 '기다려요' 문구는 모두 남은 시간을 담고 있다)
+  if (!(sec > 0) || /뒤|후/.test(msg) || (lang() !== "ko" && !/[가-힣]/.test(msg))) return errText(msg);
+  const when = sec >= 3600 ? t("약 {n}시간", { n: Math.ceil(sec / 3600) }) : t("약 {n}분", { n: Math.max(1, Math.ceil(sec / 60)) });
+  return t("{msg} ({when} 뒤에 다시 보낼 수 있어요)", { msg: errText(msg), when });
 }
 
 // 줄이 길어 잘렸는지는 화면에 붙은 뒤에야 알 수 있어서, 붙인 다음 바로 한 번, 화면이 그려진 뒤 한 번 더 잰다
@@ -259,7 +292,7 @@ const CSS = `
 .pj-fd-file:active{background:var(--tint)}
 .pj-fd-file .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:.88rem}
 .pj-fd-file .sz{flex:none;color:var(--muted);font-size:.8rem}
-.pj-fd-foot{display:flex;align-items:center;gap:8px}
+.pj-fd-foot{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
 .pj-fd-un{margin-left:auto;flex:none;font-size:.8rem;font-weight:700;color:var(--muted);white-space:nowrap}
 button.pj-fd-un{min-height:44px;padding:0 14px;border:1px solid var(--line-ctl);background:var(--card);color:var(--ink);border-radius:var(--r-pill);cursor:pointer}
 button.pj-fd-un:active{background:var(--tint)}
@@ -270,7 +303,7 @@ button.pj-fd-un:active{background:var(--tint)}
 .pj-fd-unp+.pj-fd-unp{border-top:1px solid var(--line)}
 .pj-fd-unp .nm{font-weight:700;overflow-wrap:anywhere}
 .pj-fd-unp .jt{color:var(--muted);font-size:.8rem}
-.pj-fd-cmbtn{min-height:44px;padding:0 14px;border:1px solid var(--line-ctl);background:var(--card);color:var(--ink);border-radius:var(--r-pill);font-size:.85rem;font-weight:700;cursor:pointer}
+.pj-fd-cmbtn{min-height:44px;padding:0 14px;border:1px solid var(--line-ctl);background:var(--card);color:var(--ink);border-radius:var(--r-pill);font-size:.85rem;font-weight:700;cursor:pointer;white-space:nowrap}
 .pj-fd-cmbtn[aria-expanded=true]{background:var(--tint);border-color:var(--ink)}
 .pj-fd-cm{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:8px}
 .pj-fd-cm-list{display:flex;flex-direction:column;gap:0}
@@ -345,12 +378,12 @@ export async function renderFeed(root, ctx) {
     if (pend.size) pendSince = Date.now();
   }
 
-  const searchIn = h("input", { class: "inp", type: "search", placeholder: "검색 (제목·내용)", "aria-label": "글 검색", enterkeyhint: "search", autocomplete: "off" });
+  const searchIn = h("input", { class: "inp", type: "search", placeholder: t("검색 (제목·내용)"), "aria-label": t("글 검색"), enterkeyhint: "search", autocomplete: "off" });
   const chipsBox = h("div", { class: "pj-fd-chips" });
   const pinBox = h("div", { class: "pj-fd-pins", hidden: true });
   const listBox = h("div", { class: "pj-fd-list" });
   const moreBox = h("div", { class: "pj-fd-moreBox" });
-  const composeBtn = ctx.canWrite ? h("button", { type: "button", class: "btn primary", onclick: () => compose() }, "✏️ 글쓰기") : null;
+  const composeBtn = ctx.canWrite ? h("button", { type: "button", class: "btn primary", onclick: () => compose() }, t("✏️ 글쓰기")) : null;
   const wrap = h("div", { class: "pj-fd" }, h("div", { class: "pj-fd-bar" }, joinHint(), composeBtn, searchIn), chipsBox, pinBox, listBox, moreBox);
   // 이 피드가 아직 화면에 있나. 탭을 바꾸면 projects.js 가 칸(root)째 문서에서 떼어 내므로 wrap 이 root 안에 남아 있어도 isConnected 는 false 가 된다.
   // 같은 칸에 새로 그렸거나, 화면에 붙었다가 떨어졌으면 끝난 것(늦게 온 응답·타이머는 버린다). 아직 한 번도 안 붙은 칸은 그대로 그린다
@@ -370,19 +403,19 @@ export async function renderFeed(root, ctx) {
   /* ----- 맨 위 안내 ----- */
   function joinHint() {
     if (ctx.canWrite) return null;
-    if (project.status === "archived") return h("div", { class: "banner" }, "보관된 프로젝트예요. 글과 댓글은 읽기만 할 수 있어요");
+    if (project.status === "archived") return h("div", { class: "banner" }, t("보관된 프로젝트예요. 글과 댓글은 읽기만 할 수 있어요"));
     if (!ctx.myRole && ctx.isTop) {
-      return h("div", { class: "banner" }, h("span", null, "이 프로젝트에 참여하면 글과 댓글을 쓸 수 있어요"),
-        h("button", { type: "button", class: "linkbtn", onclick: joinNow }, "참여하기"));
+      return h("div", { class: "banner" }, h("span", null, t("이 프로젝트에 참여하면 글과 댓글을 쓸 수 있어요")),
+        h("button", { type: "button", class: "linkbtn", onclick: joinNow }, t("참여하기")));
     }
     return null;
   }
   async function joinNow() {
     try {
       await pj.join(pid);
-      toast("참여했어요", 1800);
+      toast(t("참여했어요"), 1800);
       if (ctx.reloadProject) await ctx.reloadProject();
-    } catch (e) { toast(e.message, 5000); }
+    } catch (e) { toast(errText(e.message), 5000); }
   }
 
   /* ----- 읽음 확인: 글이 0.8초 이상 보이면 읽음, 모아서 한꺼번에 저장 ----- */
@@ -405,7 +438,7 @@ export async function renderFeed(root, ctx) {
   }
   function unreadLabel() {
     const n = countNew();
-    return "미확인만" + (n > 0 ? ` ${n}${st.hasMore && !st.unreadOnly ? "+" : ""}` : "");
+    return t("미확인만") + (n > 0 ? ` ${n}${st.hasMore && !st.unreadOnly ? "+" : ""}` : "");
   }
   function recount() {
     if (unChip) unChip.textContent = unreadLabel();
@@ -575,7 +608,7 @@ export async function renderFeed(root, ctx) {
     if (!el) return;
     const c = st.counts.get(rec.post.id);
     const n = c ? Number(c.unread) || 0 : 0;
-    el.textContent = `👁 미확인 ${n}명`;
+    el.textContent = t("👁 미확인 {n}명", { n });
     el.hidden = n <= 0;
   }
 
@@ -610,16 +643,16 @@ export async function renderFeed(root, ctx) {
   }
   function renderChips() {
     const top = st.tags.slice(0, 10);
-    const kids = [chip("내 글만", st.mine, () => setFilter({ mine: !st.mine }))];
+    const kids = [chip(t("내 글만"), st.mine, () => setFilter({ mine: !st.mine }))];
     unChip = null;
     if (ctx.myRole) {
       unChip = chip(unreadLabel(), st.unreadOnly, () => setFilter({ unreadOnly: !st.unreadOnly }));
-      kids.push(unChip, h("button", { type: "button", class: "linkbtn", onclick: markAll }, "모두 읽음"));
+      kids.push(unChip, h("button", { type: "button", class: "linkbtn", onclick: markAll }, t("모두 읽음")));
     }
     for (const t of top) kids.push(chip("#" + t.tag, st.tag === t.tag, () => setFilter({ tag: st.tag === t.tag ? "" : t.tag })));
     if (st.tag && !top.some((t) => t.tag === st.tag)) kids.push(chip("#" + st.tag, true, () => setFilter({ tag: "" })));
-    if (filtered()) kids.push(chip("✕ 해제", false, () => { resetFilters(); load({ tags: false }); }));
-    if (typeof ctx.goFiles === "function") kids.push(h("button", { type: "button", class: "linkbtn", onclick: () => ctx.goFiles() }, "📁 파일 모아보기"));
+    if (filtered()) kids.push(chip(t("✕ 해제"), false, () => { resetFilters(); load({ tags: false }); }));
+    if (typeof ctx.goFiles === "function") kids.push(h("button", { type: "button", class: "linkbtn", onclick: () => ctx.goFiles() }, t("📁 파일 모아보기")));
     chipsBox.replaceChildren(...kids);
   }
   async function refreshTags() {
@@ -662,7 +695,7 @@ export async function renderFeed(root, ctx) {
       if (tg) st.tags = tg;
     } catch (e) {
       if (my !== st.seq || !alive()) return;
-      if (quiet && st.rows.length) toast(e.message, 4000);
+      if (quiet && st.rows.length) toast(errText(e.message), 4000);
       else st.err = e.message;
     }
     st.loading = false;
@@ -678,7 +711,7 @@ export async function renderFeed(root, ctx) {
       if (my !== st.seq || !alive()) return; // 그 사이 다시 불러오기 시작했으면 그쪽에 맡긴다
       focusId = null;
       if (found) focusPost(id);
-      else if (found === false) toast("글을 찾지 못했어요. 오래된 글이거나 지워진 글이에요", 4000);
+      else if (found === false) toast(t("글을 찾지 못했어요. 오래된 글이거나 지워진 글이에요"), 4000);
     }
   }
 
@@ -702,7 +735,7 @@ export async function renderFeed(root, ctx) {
         recount();
         loadCounts();
       }
-    } catch (e) { toast(e.message, 4000); }
+    } catch (e) { toast(errText(e.message), 4000); }
     st.moreBusy = false;
     if (alive()) drawMore();
   }
@@ -759,7 +792,7 @@ export async function renderFeed(root, ctx) {
   function drawMore() {
     moreBox.replaceChildren();
     if (st.loading || st.err || !st.hasMore) return;
-    moreBox.append(h("button", { type: "button", class: "btn ghost slim", disabled: st.moreBusy || st.reloading, onclick: more }, st.moreBusy ? "불러오는 중…" : "이전 글 더 보기"));
+    moreBox.append(h("button", { type: "button", class: "btn ghost slim", disabled: st.moreBusy || st.reloading, onclick: more }, st.moreBusy ? t("불러오는 중…") : t("이전 글 더 보기")));
   }
 
   function drawList() {
@@ -770,20 +803,20 @@ export async function renderFeed(root, ctx) {
     const pinIds = new Set(pins.map((p) => p.id));
     if (pins.length) {
       pinBox.hidden = false;
-      pinBox.replaceChildren(h("div", { class: "pj-fd-sec" }, "📌 고정된 글"), ...pins.map((p) => cardFor(recOf(p), "pin")));
+      pinBox.replaceChildren(h("div", { class: "pj-fd-sec" }, t("📌 고정된 글")), ...pins.map((p) => cardFor(recOf(p), "pin")));
     } else {
       pinBox.hidden = true;
       pinBox.replaceChildren();
     }
     if (st.loading && !st.rows.length) {
-      listBox.replaceChildren(h("p", { class: "muted" }, "불러오는 중…"));
+      listBox.replaceChildren(h("p", { class: "muted" }, t("불러오는 중…")));
     } else if (st.err) {
-      listBox.replaceChildren(h("p", { class: "err" }, "불러오기 실패: " + st.err), h("button", { type: "button", class: "btn ghost slim", onclick: () => load() }, "다시 시도"));
+      listBox.replaceChildren(h("p", { class: "err" }, t("불러오기 실패: {msg}", { msg: errText(st.err) })), h("button", { type: "button", class: "btn ghost slim", onclick: () => load() }, t("다시 시도")));
     } else {
       const rest = st.rows.filter((r) => !pinIds.has(r.id));
       if (rest.length) listBox.replaceChildren(...rest.map((p) => cardFor(recOf(p), "list")));
       else if (pins.length) listBox.replaceChildren();
-      else listBox.replaceChildren(h("p", { class: "muted" }, st.unreadOnly ? "안 읽은 글이 없어요" : filtered() ? "찾는 글이 없어요" : ctx.canWrite ? "아직 글이 없어요. 첫 글을 남겨 보세요." : "아직 글이 없어요"));
+      else listBox.replaceChildren(h("p", { class: "muted" }, st.unreadOnly ? t("안 읽은 글이 없어요") : filtered() ? t("찾는 글이 없어요") : ctx.canWrite ? t("아직 글이 없어요. 첫 글을 남겨 보세요.") : t("아직 글이 없어요")));
     }
     drawMore();
     afterInsert(wrap);
@@ -797,14 +830,14 @@ export async function renderFeed(root, ctx) {
     return h("button", { type: "button", class: "pj-fd-pinrow", "aria-expanded": "false", onclick: () => { rec.expanded = true; refresh(rec); } },
       h("span", null, "📌"),
       h("span", { class: "pj-fd-pinmain" },
-        h("span", { class: "pj-fd-pintitle" }, clip(first, 60) || "(내용 없음)"),
+        h("span", { class: "pj-fd-pintitle" }, clip(first, 60) || t("(내용 없음)")),
         h("span", { class: "pj-fd-pinmeta" }, `${p.author_name || ""} · ${fmtWhen(p.created_at)}`)),
       isNewPost(p) && h("span", { class: "pj-fd-new" }, "NEW"),
       h("span", { class: "muted" }, "▾"));
   }
 
   function cmLabel(p) {
-    return Number(p.comment_count) > 0 ? `💬 댓글 ${p.comment_count}` : "💬 댓글";
+    return Number(p.comment_count) > 0 ? t("💬 댓글 {n}", { n: p.comment_count }) : t("💬 댓글");
   }
   function updateCmBtn(rec) {
     if (rec.cmBtn) rec.cmBtn.textContent = cmLabel(rec.post);
@@ -819,26 +852,26 @@ export async function renderFeed(root, ctx) {
     const docs = files.filter((f) => f.kind !== "image");
     const edited = ts(p.updated_at) - ts(p.created_at) > 1000;
 
-    const menuBtn = h("button", { type: "button", class: "pj-fd-menubtn", "aria-label": "글 메뉴", "aria-haspopup": "menu", onclick: () => openMenu(menuBtn, menuItems(rec)) }, "⋯");
+    const menuBtn = h("button", { type: "button", class: "pj-fd-menubtn", "aria-label": t("글 메뉴"), "aria-haspopup": "menu", onclick: () => openMenu(menuBtn, menuItems(rec)) }, "⋯");
     const who = h("div", { class: "pj-fd-who" },
-      h("span", { class: "pj-fd-name" }, p.author_name || "이름 없음"),
-      h("span", { class: "pj-fd-time" }, fmtWhen(p.created_at) + (edited ? " (수정됨)" : "")));
+      h("span", { class: "pj-fd-name" }, p.author_name || t("이름 없음")),
+      h("span", { class: "pj-fd-time" }, fmtWhen(p.created_at) + (edited ? " " + t("(수정됨)") : "")));
     const head = h("div", { class: "pj-fd-head" },
-      p.pinned && h("span", { title: "고정된 글" }, "📌"),
+      p.pinned && h("span", { title: t("고정된 글") }, "📌"),
       who,
       isNew && h("span", { class: "pj-fd-new" }, "NEW"),
-      rec.where === "pin" && h("button", { type: "button", class: "linkbtn", onclick: () => { rec.expanded = false; refresh(rec); } }, "접기"),
+      rec.where === "pin" && h("button", { type: "button", class: "linkbtn", onclick: () => { rec.expanded = false; refresh(rec); } }, t("접기")),
       menuBtn);
 
     const kids = [head];
     if (p.title) kids.push(h("h3", { class: "pj-fd-title" }, p.title));
     if (p.body) {
       const bodyEl = h("div", { class: "pj-fd-body" + (rec.bodyOpen ? "" : " clamp") }, linkify(p.body));
-      const moreBtn = h("button", { type: "button", class: "linkbtn pj-fd-morebtn", hidden: true }, rec.bodyOpen ? "접기" : "더 보기");
+      const moreBtn = h("button", { type: "button", class: "linkbtn pj-fd-morebtn", hidden: true }, rec.bodyOpen ? t("접기") : t("더 보기"));
       moreBtn.onclick = () => {
         rec.bodyOpen = !rec.bodyOpen;
         bodyEl.classList.toggle("clamp", !rec.bodyOpen);
-        moreBtn.textContent = rec.bodyOpen ? "접기" : "더 보기";
+        moreBtn.textContent = rec.bodyOpen ? t("접기") : t("더 보기");
       };
       bodyEl._chk = () => {
         if (rec.bodyOpen) { moreBtn.hidden = false; return; }
@@ -879,8 +912,8 @@ export async function renderFeed(root, ctx) {
     const shown = imgs.slice(0, n === 1 ? 1 : 4);
     const cls = "pj-fd-ph " + (n === 1 ? "n1" : n === 2 ? "n2" : n === 3 ? "n3" : "n4");
     return h("div", { class: cls }, shown.map((f, i) => {
-      const img = h("img", { alt: f.file_name || "사진", "data-path": f.thumb_path || f.path, decoding: "async", draggable: "false" });
-      const btn = h("button", { type: "button", class: "pj-fd-pt", "aria-label": `사진 ${i + 1} 크게 보기`, onclick: () => viewPhotos(imgs, i) },
+      const img = h("img", { alt: f.file_name || t("사진"), "data-path": f.thumb_path || f.path, decoding: "async", draggable: "false" });
+      const btn = h("button", { type: "button", class: "pj-fd-pt", "aria-label": t("사진 {n} 크게 보기", { n: i + 1 }), onclick: () => viewPhotos(imgs, i) },
         img, i === 3 && n > 4 && h("span", { class: "pj-fd-plus" }, "+" + (n - 4)));
       if (n === 1 && f.width > 0 && f.height > 0) btn.style.aspectRatio = String(Math.min(1.8, Math.max(0.8, f.width / f.height)));
       return btn;
@@ -891,14 +924,14 @@ export async function renderFeed(root, ctx) {
     openLightbox(imgs, i, async (row, fresh) => {
       const m = await pj.urls([row.path], !!fresh);
       const u = m.get(row.path);
-      if (!u) throw new Error("사진 주소를 받지 못했어요");
+      if (!u) throw new Error(t("사진 주소를 받지 못했어요"));
       return u;
     });
   }
 
   function fileChip(f) {
     return h("button", { type: "button", class: "pj-fd-file", onclick: () => openDoc(f) },
-      h("span", null, iconOf(f)), h("span", { class: "nm" }, f.file_name || "파일"), h("span", { class: "sz" }, kb(f.size)));
+      h("span", null, iconOf(f)), h("span", { class: "nm" }, f.file_name || t("파일")), h("span", { class: "sz" }, kb(f.size)));
   }
 
   // 팝업 차단을 피하려고 창을 먼저 열고 주소를 받아 옮긴다 (library.js 와 같은 방식)
@@ -907,11 +940,11 @@ export async function renderFeed(root, ctx) {
     try {
       const m = await pj.urls([f.path]);
       const u = m.get(f.path);
-      if (!u) throw new Error("파일 주소를 받지 못했어요");
+      if (!u) throw new Error(t("파일 주소를 받지 못했어요"));
       if (w) w.location = u; else location.href = u;
     } catch (e) {
       try { if (w) w.close(); } catch { /* ignore */ }
-      toast(e.message || "파일을 열지 못했어요", 5000);
+      toast(errText(e.message) || t("파일을 열지 못했어요"), 5000);
     }
   }
 
@@ -950,10 +983,10 @@ export async function renderFeed(root, ctx) {
     const p = rec.post;
     const mine = !!meId && p.author_id === meId;
     const items = [];
-    if (ctx.canAdmin) items.push({ label: p.pinned ? "📌 고정 해제" : "📌 맨 위에 고정", run: () => togglePin(rec) });
-    if (mine && ctx.canWrite) items.push({ label: "✏️ 수정", run: () => compose(rec) });
-    if (mine || ctx.canAdmin) items.push({ label: "🗑 삭제", danger: true, run: () => removePost(rec) });
-    items.push({ label: "🔗 링크 복사", run: () => copyLink(p) });
+    if (ctx.canAdmin) items.push({ label: p.pinned ? t("📌 고정 해제") : t("📌 맨 위에 고정"), run: () => togglePin(rec) });
+    if (mine && ctx.canWrite) items.push({ label: t("✏️ 수정"), run: () => compose(rec) });
+    if (mine || ctx.canAdmin) items.push({ label: t("🗑 삭제"), danger: true, run: () => removePost(rec) });
+    items.push({ label: t("🔗 링크 복사"), run: () => copyLink(p) });
     return items;
   }
 
@@ -966,7 +999,7 @@ export async function renderFeed(root, ctx) {
     } catch { return `${location.pathname}?p=${pid}&post=${p.id}`; }
   }
   async function copyLink(p) {
-    toast((await copyText(postLink(p))) ? "글 링크를 복사했어요" : "복사하지 못했어요", 2200);
+    toast((await copyText(postLink(p))) ? t("글 링크를 복사했어요") : t("복사하지 못했어요"), 2200);
   }
 
   // 고정·해제: 불러온 글 목록은 그대로 두고 표시만 바꾸고, 고정 글 목록(최대 5개)만 다시 받는다 (아래로 내려 본 자리가 안 줄어든다)
@@ -975,8 +1008,8 @@ export async function renderFeed(root, ctx) {
     const on = !rec.post.pinned;
     try {
       await pj.pin(id, on);
-    } catch (e) { toast(e.message, 5000); return; }
-    toast(on ? "맨 위에 고정했어요" : "고정을 풀었어요", 1800);
+    } catch (e) { toast(errText(e.message), 5000); return; }
+    toast(on ? t("맨 위에 고정했어요") : t("고정을 풀었어요"), 1800);
     if (!alive()) return;
     const my = st.seq;
     rec.post.pinned = on;
@@ -985,7 +1018,7 @@ export async function renderFeed(root, ctx) {
       // 먼저 손으로 맞춰 두고(받기에 실패해도 화면은 맞게), 서버가 아는 순서로 다시 받아 바꾼다
       if (!on) st.pinned = st.pinned.filter((p) => p.id !== id);
       else if (!st.pinned.some((p) => p.id === id)) st.pinned = [rec.post, ...st.pinned];
-      try { st.pinned = await pj.pinnedPosts(pid); } catch (e) { toast(e.message, 4000); }
+      try { st.pinned = await pj.pinnedPosts(pid); } catch (e) { toast(errText(e.message), 4000); }
     }
     if (my !== st.seq || !alive()) return; // 그 사이 목록을 새로 받기 시작했으면 그쪽이 그린다
     const y = window.scrollY;
@@ -995,14 +1028,14 @@ export async function renderFeed(root, ctx) {
 
   async function removePost(rec) {
     const p = rec.post;
-    const name = clip(String(p.title || p.body || "").split("\n")[0], 40) || "이 글";
-    if (!(await confirmDialog("글을 지울까요?", [name, "사진·파일·댓글도 함께 지워지고 되돌릴 수 없어요"], "취소", "지우기"))) return;
-    const prog = progressDlg("지우는 중", "글과 첨부를 지우는 중…");
+    const name = clip(String(p.title || p.body || "").split("\n")[0], 40) || t("이 글");
+    if (!(await confirmDialog(t("글을 지울까요?"), [name, t("사진·파일·댓글도 함께 지워지고 되돌릴 수 없어요")], t("취소"), t("지우기")))) return;
+    const prog = progressDlg(t("지우는 중"), t("글과 첨부를 지우는 중…"));
     try {
       await pj.deletePost(p);
     } catch (e) {
       prog.close();
-      toast(e.message, 6000);
+      toast(errText(e.message), 6000);
       return;
     }
     prog.close();
@@ -1013,7 +1046,7 @@ export async function renderFeed(root, ctx) {
     const y = window.scrollY;
     drawList();
     window.scrollTo(0, y);
-    toast("지웠어요", 1800);
+    toast(t("지웠어요"), 1800);
     refreshTags();
   }
 
@@ -1023,8 +1056,8 @@ export async function renderFeed(root, ctx) {
     const cm = { open: false, rows: null, loading: false, err: "", token: 0, list: h("div", { class: "pj-fd-cm-list" }), el: null };
     let form = null;
     if (ctx.canWrite) {
-      const ta = h("textarea", { class: "inp", rows: "2", maxlength: "2000", placeholder: "댓글을 입력하세요", "aria-label": "댓글" });
-      const send = h("button", { type: "button", class: "pj-fd-send" }, "등록");
+      const ta = h("textarea", { class: "inp", rows: "2", maxlength: "2000", placeholder: t("댓글을 입력하세요"), "aria-label": t("댓글") });
+      const send = h("button", { type: "button", class: "pj-fd-send" }, tx("댓글", "등록"));
       send.onclick = () => postComment(rec, ta, send);
       form = h("div", { class: "pj-fd-cm-form" }, ta, send);
     }
@@ -1064,11 +1097,11 @@ export async function renderFeed(root, ctx) {
   function renderCmList(rec) {
     const cm = rec.cm;
     if (!cm.rows && cm.loading) {
-      cm.list.replaceChildren(h("p", { class: "muted" }, "댓글 불러오는 중…"));
+      cm.list.replaceChildren(h("p", { class: "muted" }, t("댓글 불러오는 중…")));
     } else if (!cm.rows && cm.err) {
-      cm.list.replaceChildren(h("p", { class: "err" }, "불러오기 실패: " + cm.err), h("button", { type: "button", class: "linkbtn", onclick: () => loadComments(rec) }, "다시 시도"));
+      cm.list.replaceChildren(h("p", { class: "err" }, t("불러오기 실패: {msg}", { msg: errText(cm.err) })), h("button", { type: "button", class: "linkbtn", onclick: () => loadComments(rec) }, t("다시 시도")));
     } else if (!cm.rows || !cm.rows.length) {
-      cm.list.replaceChildren(h("p", { class: "muted" }, "아직 댓글이 없어요"));
+      cm.list.replaceChildren(h("p", { class: "muted" }, t("아직 댓글이 없어요")));
     } else {
       cm.list.replaceChildren(...cm.rows.map((c) => commentRow(rec, c)));
     }
@@ -1078,15 +1111,15 @@ export async function renderFeed(root, ctx) {
     const canDel = (!!meId && c.author_id === meId) || ctx.canAdmin;
     return h("div", { class: "pj-fd-c" },
       h("div", { class: "pj-fd-c-head" },
-        h("b", null, c.author_name || "이름 없음"),
+        h("b", null, c.author_name || t("이름 없음")),
         h("span", { class: "muted" }, fmtWhen(c.created_at)),
-        canDel && h("button", { type: "button", class: "linkbtn", onclick: () => delComment(rec, c) }, "삭제")),
+        canDel && h("button", { type: "button", class: "linkbtn", onclick: () => delComment(rec, c) }, t("삭제"))),
       h("div", { class: "pj-fd-c-body" }, linkify(c.body)));
   }
 
   async function postComment(rec, ta, send) {
     const body = ta.value.trim();
-    if (!body) { toast("댓글 내용을 넣어 주세요"); return; }
+    if (!body) { toast(t("댓글 내용을 넣어 주세요")); return; }
     const cm = rec.cm;
     send.disabled = true;
     try {
@@ -1096,19 +1129,19 @@ export async function renderFeed(root, ctx) {
       else rec.post.comment_count = (Number(rec.post.comment_count) || 0) + 1;
       renderCmList(rec);
       updateCmBtn(rec);
-    } catch (e) { toast(e.message, 5000); }
+    } catch (e) { toast(errText(e.message), 5000); }
     send.disabled = false;
   }
 
   async function delComment(rec, c) {
-    if (!(await confirmDialog("댓글을 지울까요?", [clip(c.body, 40)], "취소", "지우기"))) return;
+    if (!(await confirmDialog(t("댓글을 지울까요?"), [clip(c.body, 40)], t("취소"), t("지우기")))) return;
     try {
       await pj.deleteComment(c.id);
       const cm = rec.cm;
       if (cm.rows) { cm.rows = cm.rows.filter((x) => x.id !== c.id); rec.post.comment_count = cm.rows.length; }
       renderCmList(rec);
       updateCmBtn(rec);
-    } catch (e) { toast(e.message, 5000); }
+    } catch (e) { toast(errText(e.message), 5000); }
   }
 
   /* ----- 미확인 명단 · 모두 읽음 · 새 글 알림 ----- */
@@ -1116,55 +1149,55 @@ export async function renderFeed(root, ctx) {
   async function showUnread(rec) {
     const p = rec.post;
     const c0 = st.counts.get(p.id);
-    const sub = h("p", { class: "pj-fd-unsub" }, c0 && c0.total > 0 ? `읽음 ${Math.max(0, c0.total - c0.unread)}/${c0.total}` : "");
-    const body = h("div", null, h("p", { class: "muted" }, "불러오는 중…"));
+    const sub = h("p", { class: "pj-fd-unsub" }, c0 && c0.total > 0 ? t("읽음 {a}/{b}", { a: Math.max(0, c0.total - c0.unread), b: c0.total }) : "");
+    const body = h("div", null, h("p", { class: "muted" }, t("불러오는 중…")));
     const acts = h("div");
     const close = () => ov.remove();
     const ov = h("div", { class: "overlay", onclick: (e) => { if (e.target === ov) close(); } },
       h("div", { class: "dialog", role: "dialog", "aria-modal": "true" },
-        h("h2", null, "읽음 확인"),
-        h("p", { class: "pj-fd-untitle" }, clip(String(p.title || p.body || "").split("\n")[0], 50) || "(내용 없음)"),
+        h("h2", null, t("읽음 확인")),
+        h("p", { class: "pj-fd-untitle" }, clip(String(p.title || p.body || "").split("\n")[0], 50) || t("(내용 없음)")),
         sub, body, acts,
-        h("button", { type: "button", class: "btn ghost", onclick: close }, "닫기")));
+        h("button", { type: "button", class: "btn ghost", onclick: close }, t("닫기"))));
     document.body.append(ov);
 
     let rows;
     try {
       rows = await pj.unreadPeople(p.id);
     } catch (e) {
-      if (ov.isConnected) body.replaceChildren(h("p", { class: "err" }, e.message));
+      if (ov.isConnected) body.replaceChildren(h("p", { class: "err" }, errText(e.message)));
       return;
     }
     if (!ov.isConnected) return;
     const unread = rows.filter((r) => !r.has_read);
     const read = rows.filter((r) => r.has_read);
-    sub.textContent = rows.length ? `읽음 ${read.length}/${rows.length}` : "";
+    sub.textContent = rows.length ? t("읽음 {a}/{b}", { a: read.length, b: rows.length }) : "";
     if (alive()) { st.counts.set(p.id, { unread: unread.length, total: rows.length }); updateUn(rec); } // 카드 숫자도 맞춘다
 
-    const person = (r) => h("div", { class: "pj-fd-unp" }, h("span", { class: "nm" }, r.user_name || "이름 없음"), r.job_title ? h("span", { class: "jt" }, r.job_title) : null);
+    const person = (r) => h("div", { class: "pj-fd-unp" }, h("span", { class: "nm" }, r.user_name || t("이름 없음")), r.job_title ? h("span", { class: "jt" }, r.job_title) : null);
     if (!rows.length) {
-      body.replaceChildren(h("p", { class: "muted" }, "읽음을 확인할 참여자가 없어요"));
+      body.replaceChildren(h("p", { class: "muted" }, t("읽음을 확인할 참여자가 없어요")));
       return;
     }
-    const kids = [h("h3", { class: "pj-fd-unh" }, `안 읽은 사람 (${unread.length}명)`)];
+    const kids = [h("h3", { class: "pj-fd-unh" }, t("안 읽은 사람 ({n}명)", { n: unread.length }))];
     if (unread.length) kids.push(...unread.map(person));
-    else kids.push(h("p", { class: "muted" }, "모두 읽었어요"));
-    if (read.length) kids.push(h("h3", { class: "pj-fd-unh" }, `읽은 사람 (${read.length}명)`), ...read.map(person));
+    else kids.push(h("p", { class: "muted" }, t("모두 읽었어요")));
+    if (read.length) kids.push(h("h3", { class: "pj-fd-unh" }, t("읽은 사람 ({n}명)", { n: read.length })), ...read.map(person));
     body.replaceChildren(...kids);
 
     if (unread.length && ctx.project.status === "active") {
-      const nb = h("button", { type: "button", class: "btn primary" }, "🔔 미확인자에게 알림");
+      const nb = h("button", { type: "button", class: "btn primary" }, t("🔔 미확인자에게 알림"));
       nb.onclick = async () => {
         nb.disabled = true;
         try {
           const r = await pj.nudge(p.id);
           if (r.sent > 0) {
-            nb.textContent = "알림을 보냈어요";
-            toast(`${r.sent}명에게 알림을 보냈어요`, 3500);
+            nb.textContent = t("알림을 보냈어요");
+            toast(t("{n}명에게 알림을 보냈어요", { n: r.sent }), 3500);
           } else {
             // 한 명에게도 못 갔다: 서버가 6시간 칸을 돌려줬으니 버튼을 다시 쓸 수 있다
             nb.disabled = false;
-            toast(r.recipients > 0 ? "알림을 켠 사람이 없어요. 직접 알려 주세요" : "알림을 받을 수 있는 사람이 없어요 (알림을 끈 사람은 빠져요)", 4500);
+            toast(r.recipients > 0 ? t("알림을 켠 사람이 없어요. 직접 알려 주세요") : t("알림을 받을 수 있는 사람이 없어요 (알림을 끈 사람은 빠져요)"), 4500);
           }
         } catch (e) {
           nb.disabled = false;
@@ -1179,8 +1212,8 @@ export async function renderFeed(root, ctx) {
   async function markAll() {
     if (!ctx.myRole || st.markBusy || !alive()) return;
     // 불러온 글이 전부이고(걸러 보는 중이 아니고) 안 읽은 글이 없으면 물어볼 필요가 없다
-    if (!st.hasMore && !filtered() && !countNew()) { toast("안 읽은 글이 없어요", 1800); return; }
-    if (!(await confirmDialog("모두 읽음으로 할까요?", ["지금까지 올라온 글을 모두 읽은 것으로 표시해요", "글쓴이가 보는 '미확인 N명'에서도 빠져요"], "취소", "모두 읽음"))) return;
+    if (!st.hasMore && !filtered() && !countNew()) { toast(t("안 읽은 글이 없어요"), 1800); return; }
+    if (!(await confirmDialog(t("모두 읽음으로 할까요?"), [t("지금까지 올라온 글을 모두 읽은 것으로 표시해요"), t("글쓴이가 보는 '미확인 N명'에서도 빠져요")], t("취소"), t("모두 읽음")))) return;
     if (!alive()) return;
     st.markBusy = true;
     try {
@@ -1193,9 +1226,9 @@ export async function renderFeed(root, ctx) {
       pend.clear();
       pendSince = 0;
       store([], done);
-      toast("모두 읽음으로 표시했어요", 1800);
+      toast(t("모두 읽음으로 표시했어요"), 1800);
       if (alive()) await load({ quiet: true, tags: false });
-    } catch (e) { toast(e.message, 5000); }
+    } catch (e) { toast(errText(e.message), 5000); }
     st.markBusy = false;
   }
 
@@ -1222,13 +1255,13 @@ export async function renderFeed(root, ctx) {
     const keptImgs = () => existing.filter((f) => f.kind === "image" && !removeIds.has(f.id)).length;
     const keptDocs = () => existing.filter((f) => f.kind !== "image" && !removeIds.has(f.id)).length;
 
-    const lbl = (t) => h("span", { class: "pj-fd-lbl" }, t);
-    const titleIn = h("input", { class: "inp", maxlength: "100", placeholder: "제목 (선택)", "aria-label": "제목", autocomplete: "off" });
-    const bodyIn = h("textarea", { class: "inp", rows: "8", maxlength: "10000", placeholder: "내용을 적어 주세요. #단어를 쓰면 태그가 돼요", "aria-label": "내용" });
-    const linksIn = h("textarea", { class: "inp", rows: "3", maxlength: "2000", placeholder: "링크나 NAS 경로를 한 줄에 하나씩\n예) https://…  또는  \\\\NAS\\영업\\단가표.xlsx", "aria-label": "링크·NAS 경로" });
+    const lbl = (text) => h("span", { class: "pj-fd-lbl" }, text);
+    const titleIn = h("input", { class: "inp", maxlength: "100", placeholder: t("제목 (선택)"), "aria-label": t("제목"), autocomplete: "off" });
+    const bodyIn = h("textarea", { class: "inp", rows: "8", maxlength: "10000", placeholder: t("내용을 적어 주세요. #단어를 쓰면 태그가 돼요"), "aria-label": t("내용") });
+    const linksIn = h("textarea", { class: "inp", rows: "3", maxlength: "2000", placeholder: t("링크나 NAS 경로를 한 줄에 하나씩\n예) https://…  또는  \\\\NAS\\영업\\단가표.xlsx"), "aria-label": t("링크·NAS 경로") });
     const pinCb = h("input", { type: "checkbox" });
     pinCb.checked = editing ? !!post.pinned : false;
-    const pinRow = ctx.canAdmin ? h("label", { class: "pj-fd-chk" }, pinCb, "맨 위에 고정하기 (프로젝트당 5개까지)") : null;
+    const pinRow = ctx.canAdmin ? h("label", { class: "pj-fd-chk" }, pinCb, t("맨 위에 고정하기 (프로젝트당 5개까지)")) : null;
 
     if (editing) {
       titleIn.value = post.title || "";
@@ -1240,7 +1273,7 @@ export async function renderFeed(root, ctx) {
         titleIn.value = String(d.title || "").slice(0, 100);
         bodyIn.value = String(d.body || "").slice(0, 10000);
         linksIn.value = String(d.links || "").slice(0, 2000);
-        toast("쓰던 글을 불러왔어요", 2500);
+        toast(t("쓰던 글을 불러왔어요"), 2500);
       }
     }
 
@@ -1255,34 +1288,34 @@ export async function renderFeed(root, ctx) {
     const clearDraft = () => { clearTimeout(draftTimer); draftOn = false; dropDraft(draftKey); };
 
     function fillTemplate() {
-      const t = minutesParts();
+      const tpl = minutesParts();
       const cur = bodyIn.value.trim();
-      bodyIn.value = cur ? cur + "\n\n" + t.body : t.body;
-      if (!titleIn.value.trim()) titleIn.value = "회의록 " + t.ymd;
+      bodyIn.value = cur ? cur + "\n\n" + tpl.body : tpl.body;
+      if (!titleIn.value.trim()) titleIn.value = t("회의록 {ymd}", { ymd: tpl.ymd });
       onEdit();
       bodyIn.focus();
     }
-    const tplBtn = h("button", { type: "button", class: "pj-fd-mini", onclick: fillTemplate }, "📝 회의록 양식");
+    const tplBtn = h("button", { type: "button", class: "pj-fd-mini", onclick: fillTemplate }, t("📝 회의록 양식"));
 
     // 사진·파일 고르기
     const photoIn = h("input", { type: "file", accept: "image/*", multiple: true, style: "display:none", tabindex: "-1" });
     const docIn = h("input", { type: "file", accept: DOC_ACCEPT, multiple: true, style: "display:none", tabindex: "-1" });
-    const photoBtn = h("button", { type: "button", class: "pj-fd-mini", onclick: () => photoIn.click() }, "＋ 사진 추가");
-    const docBtn = h("button", { type: "button", class: "pj-fd-mini", onclick: () => docIn.click() }, "＋ 파일 추가");
+    const photoBtn = h("button", { type: "button", class: "pj-fd-mini", onclick: () => photoIn.click() }, t("＋ 사진 추가"));
+    const docBtn = h("button", { type: "button", class: "pj-fd-mini", onclick: () => docIn.click() }, t("＋ 파일 추가"));
     const photoLbl = lbl("");
     const docLbl = lbl("");
-    const existLbl = lbl("올려 둔 첨부 (지울 것을 고르세요)");
+    const existLbl = lbl(t("올려 둔 첨부 (지울 것을 고르세요)"));
     const existBox = h("div", { class: "pj-fd-picks" });
     const photoBox = h("div", { class: "pj-fd-picks" });
     const docBox = h("div", { class: "pj-fd-picks" });
 
     const pickRow = (icon, name, size, rightBtn, gone) =>
-      h("div", { class: "pj-fd-pick" + (gone ? " gone" : "") }, h("span", { class: "nm" }, icon + " " + (name || "파일")), size ? h("span", { class: "sz" }, size) : null, rightBtn);
+      h("div", { class: "pj-fd-pick" + (gone ? " gone" : "") }, h("span", { class: "nm" }, icon + " " + (name || t("파일"))), size ? h("span", { class: "sz" }, size) : null, rightBtn);
 
     function toggleExisting(f) {
       if (removeIds.has(f.id)) {
         const full = f.kind === "image" ? photos.length + keptImgs() >= MAX_PHOTOS : docs.length + keptDocs() >= MAX_DOCS;
-        if (full) { toast("개수 제한 때문에 되돌릴 수 없어요. 새로 고른 것을 먼저 빼 주세요", 4000); return; }
+        if (full) { toast(t("개수 제한 때문에 되돌릴 수 없어요. 새로 고른 것을 먼저 빼 주세요"), 4000); return; }
         removeIds.delete(f.id);
       } else {
         removeIds.add(f.id);
@@ -1294,27 +1327,27 @@ export async function renderFeed(root, ctx) {
       existLbl.hidden = !existing.length;
       existBox.replaceChildren(...existing.map((f) => {
         const gone = removeIds.has(f.id);
-        const b = h("button", { type: "button", class: "linkbtn", onclick: () => toggleExisting(f) }, gone ? "되돌리기" : "지우기");
+        const b = h("button", { type: "button", class: "linkbtn", onclick: () => toggleExisting(f) }, gone ? t("되돌리기") : t("지우기"));
         return pickRow(f.kind === "image" ? "🖼" : iconOf(f), f.file_name, kb(f.size), b, gone);
       }));
-      photoLbl.textContent = `사진 (${photos.length + keptImgs()}/${MAX_PHOTOS}장)`;
-      docLbl.textContent = `파일 (${docs.length + keptDocs()}/${MAX_DOCS}개, 20MB까지)`;
+      photoLbl.textContent = t("사진 ({n}/{max}장)", { n: photos.length + keptImgs(), max: MAX_PHOTOS });
+      docLbl.textContent = t("파일 ({n}/{max}개, 20MB까지)", { n: docs.length + keptDocs(), max: MAX_DOCS });
       photoBox.replaceChildren(...photos.map((f, i) => pickRow("🖼", f.name, kb(f.size),
-        h("button", { type: "button", class: "x", "aria-label": "빼기", onclick: () => { photos.splice(i, 1); renderPicks(); } }, "✕"), false)));
+        h("button", { type: "button", class: "x", "aria-label": t("빼기"), onclick: () => { photos.splice(i, 1); renderPicks(); } }, "✕"), false)));
       docBox.replaceChildren(...docs.map((f, i) => pickRow(iconOf({ file_name: f.name }), f.name, kb(f.size),
-        h("button", { type: "button", class: "x", "aria-label": "빼기", onclick: () => { docs.splice(i, 1); renderPicks(); } }, "✕"), false)));
+        h("button", { type: "button", class: "x", "aria-label": t("빼기"), onclick: () => { docs.splice(i, 1); renderPicks(); } }, "✕"), false)));
     }
 
     const warn = (errs) => {
-      if (errs.length) toast(errs.slice(0, 2).join(" / ") + (errs.length > 2 ? ` 외 ${errs.length - 2}건` : ""), 5000);
+      if (errs.length) toast(errs.slice(0, 2).join(" / ") + (errs.length > 2 ? " " + t("외 {n}건", { n: errs.length - 2 }) : ""), 5000);
     };
     photoIn.addEventListener("change", () => {
       const errs = [];
       for (const f of [...photoIn.files]) {
-        if (!isImage(f)) { errs.push(`${clip(f.name, 24)}: 사진이 아니에요`); continue; }
+        if (!isImage(f)) { errs.push(t("{name}: 사진이 아니에요", { name: clip(f.name, 24) })); continue; }
         const bad = checkFile(f);
-        if (bad) { errs.push(bad); continue; }
-        if (photos.length + keptImgs() >= MAX_PHOTOS) { errs.push(`사진은 글 하나에 ${MAX_PHOTOS}장까지 올릴 수 있어요`); break; }
+        if (bad) { errs.push(errText(bad)); continue; }
+        if (photos.length + keptImgs() >= MAX_PHOTOS) { errs.push(t("사진은 글 하나에 {n}장까지 올릴 수 있어요", { n: MAX_PHOTOS })); break; }
         if (photos.some((x) => sameFile(x, f))) continue;
         photos.push(f);
       }
@@ -1325,10 +1358,10 @@ export async function renderFeed(root, ctx) {
     docIn.addEventListener("change", () => {
       const errs = [];
       for (const f of [...docIn.files]) {
-        if (isImage(f)) { errs.push(`${clip(f.name, 24)}: 사진은 '사진 추가'로 올려 주세요`); continue; }
+        if (isImage(f)) { errs.push(t("{name}: 사진은 '사진 추가'로 올려 주세요", { name: clip(f.name, 24) })); continue; }
         const bad = checkFile(f);
-        if (bad) { errs.push(bad); continue; }
-        if (docs.length + keptDocs() >= MAX_DOCS) { errs.push(`파일은 글 하나에 ${MAX_DOCS}개까지 올릴 수 있어요`); break; }
+        if (bad) { errs.push(errText(bad)); continue; }
+        if (docs.length + keptDocs() >= MAX_DOCS) { errs.push(t("파일은 글 하나에 {n}개까지 올릴 수 있어요", { n: MAX_DOCS })); break; }
         if (docs.some((x) => sameFile(x, f))) continue;
         docs.push(f);
       }
@@ -1339,57 +1372,57 @@ export async function renderFeed(root, ctx) {
     renderPicks();
 
     const content = h("div", { class: "stack" },
-      lbl("제목 (선택)"), titleIn,
-      h("div", { class: "pj-fd-lblrow" }, lbl("내용"), tplBtn),
+      lbl(t("제목 (선택)")), titleIn,
+      h("div", { class: "pj-fd-lblrow" }, lbl(t("내용")), tplBtn),
       bodyIn,
       existLbl, existBox,
       h("div", { class: "pj-fd-lblrow" }, photoLbl, photoBtn), photoBox, photoIn,
       h("div", { class: "pj-fd-lblrow" }, docLbl, docBtn), docBox, docIn,
-      lbl("링크·NAS 경로 (한 줄에 하나씩)"), linksIn,
+      lbl(t("링크·NAS 경로 (한 줄에 하나씩)")), linksIn,
       pinRow);
 
     for (;;) {
-      const ok = await modal(editing ? "글 수정" : "글쓰기", content, "저장", "취소");
+      const ok = await modal(editing ? t("글 수정") : t("글쓰기"), content, t("저장"), t("취소"));
       if (!ok) { flushDraft(); return; }
-      const t = titleIn.value.trim();
+      const ttl = titleIn.value.trim();
       const b = bodyIn.value.trim();
-      if (!t && !b) { toast("제목이나 내용을 입력해 주세요"); continue; }
+      if (!ttl && !b) { toast(t("제목이나 내용을 입력해 주세요")); continue; }
 
       const upList = [...photos.map((f) => ({ f, photo: true })), ...docs.map((f) => ({ f, photo: false }))];
-      const prog = progressDlg("저장 중", "글을 저장하는 중…");
+      const prog = progressDlg(t("저장 중"), t("글을 저장하는 중…"));
       let saved = null;
       const failed = [];   // 올리거나 지우지 못한 첨부 { name, msg }
       const asFile = [];   // 사진으로 줄일 수 없어 파일로 올라간 것
       let files = existing.slice();
       try {
         try {
-          saved = await pj.savePost(pid, { id: editing ? post.id : undefined, title: t, body: b, links: linksIn.value, pinned: ctx.canAdmin ? pinCb.checked : undefined });
+          saved = await pj.savePost(pid, { id: editing ? post.id : undefined, title: ttl, body: b, links: linksIn.value, pinned: ctx.canAdmin ? pinCb.checked : undefined });
         } catch (e) {
           prog.close();
-          toast(e.message, 6000);
+          toast(errText(e.message), 6000);
           continue; // 글이 저장되지 않았으니 쓰던 내용 그대로 창을 다시 연다
         }
         if (!editing) clearDraft();
 
         // 수정 중 지우기로 표시한 기존 첨부
         for (const f of existing.filter((x) => removeIds.has(x.id))) {
-          prog.set("첨부를 지우는 중…", f.file_name || "");
+          prog.set(t("첨부를 지우는 중…"), f.file_name || "");
           try {
             await pj.deleteFile(f);
             files = files.filter((x) => x.id !== f.id);
-          } catch (e) { failed.push({ name: f.file_name || "파일", msg: "지우지 못했어요: " + e.message }); }
+          } catch (e) { failed.push({ name: f.file_name || t("파일"), msg: t("지우지 못했어요: {msg}", { msg: String(errText(e.message)) }) }); }
         }
 
         // 새 사진·파일은 한 장씩 차례로
         let i = 0;
         for (const it of upList) {
           i++;
-          prog.set(`(${i}/${upList.length}) 올리는 중…`, it.f.name);
+          prog.set(t("({i}/{n}) 올리는 중…", { i, n: upList.length }), it.f.name);
           try {
             const row = await pj.uploadFile(pid, saved.id, it.f);
             files.push(row);
             if (it.photo && row.kind !== "image") asFile.push(it.f.name);
-          } catch (e) { failed.push({ name: it.f.name, msg: e.message }); }
+          } catch (e) { failed.push({ name: it.f.name, msg: errText(e.message) }); }
         }
       } finally {
         prog.close();
@@ -1415,19 +1448,19 @@ export async function renderFeed(root, ctx) {
 
       // 일부 실패는 글은 남기고 알려 준다
       const lines = [];
-      if (saved.pin_error) lines.push("상단고정: " + saved.pin_error);
+      if (saved.pin_error) lines.push(t("상단고정: {msg}", { msg: errText(saved.pin_error) }));
       for (const x of failed) lines.push(`${clip(x.name, 40)} — ${x.msg}`);
-      if (asFile.length) lines.push(`사진으로 줄일 수 없는 형식이라 파일로 올렸어요: ${asFile.map((n) => clip(n, 30)).join(", ")}`);
-      if (failed.length) lines.push("글은 저장됐어요. ⋯ 메뉴의 수정에서 다시 올릴 수 있어요");
+      if (asFile.length) lines.push(t("사진으로 줄일 수 없는 형식이라 파일로 올렸어요: {names}", { names: asFile.map((n) => clip(n, 30)).join(", ") }));
+      if (failed.length) lines.push(t("글은 저장됐어요. ⋯ 메뉴의 수정에서 다시 올릴 수 있어요"));
       // 알림을 못 보냈으면 '저장했어요' 안내가 사라진 뒤에 알린다(같은 자리에 겹쳐 뜨지 않게)
       const savedAt = Date.now();
       if (notifyP) {
         notifyP.then((bad) => {
-          if (bad) setTimeout(() => toast("글은 올렸어요. 알림은 보내지 못했어요", 4500), lines.length ? 0 : Math.max(0, 2100 - (Date.now() - savedAt)));
+          if (bad) setTimeout(() => toast(t("글은 올렸어요. 알림은 보내지 못했어요"), 4500), lines.length ? 0 : Math.max(0, 2100 - (Date.now() - savedAt)));
         });
       }
-      if (lines.length) await notice(failed.length ? "글은 저장했지만 일부는 안 됐어요" : "저장했어요", lines);
-      else toast("저장했어요", 2000);
+      if (lines.length) await notice(failed.length ? t("글은 저장했지만 일부는 안 됐어요") : t("저장했어요"), lines);
+      else toast(t("저장했어요"), 2000);
       return;
     }
   }
