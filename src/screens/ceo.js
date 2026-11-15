@@ -52,7 +52,7 @@ export async function renderCeo(root, profile) {
     } catch (e) { err = e.message; }
     draw();
     // 프로젝트 안 읽음 숫자는 따로(느려도 첫 화면을 막지 않는다)
-    import("./projects.js").then((m) => m.pjSummary()).then((s) => { if (s.newPosts !== pjNew) { pjNew = s.newPosts; if (sel === "all" && !pjOpen && !libOpen && !wkOpen && !tkOpen && !sgOpen && !accountsOpen) draw(); } }).catch(() => {});
+    import("./projects.js").then((m) => m.pjSummary()).then((s) => { if (s.newPosts !== pjNew) { pjNew = s.newPosts; if (sel === "all" && !pjOpen && !aiOpen && !libOpen && !wkOpen && !tkOpen && !sgOpen && !accountsOpen) draw(); } }).catch(() => {});
   }
 
   function choose(id) {
@@ -220,8 +220,14 @@ export async function renderCeo(root, profile) {
     return holder;
   }
 
+  // 하위 화면(업무지시·자료함·프로젝트 등)을 열 때 보던 자리를 기억해 두었다가, "← 목록"으로 돌아오면 그 자리로 되돌린다
+  let boardY = 0, wasSub = false, wasSel = sel;
   function draw() {
-    const y = scrollY;
+    let y = scrollY;
+    const sub = sel === "all" && (pjOpen || aiOpen || libOpen || wkOpen || tkOpen || sgOpen || accountsOpen);
+    if (sub && !wasSub && wasSel === "all") { boardY = y; y = 0; } // 새 화면은 맨 위에서 시작(예전에는 그리는 도중 짧아졌다 늘어나며 저절로 맨 위가 됐다)
+    else if (!sub && wasSub && sel === "all" && wasSel === "all") y = boardY;
+    wasSub = sub; wasSel = sel;
     if (sel === "all") api.setStore(null);
     root.replaceChildren(h("div", { class: "page", style: "padding-bottom:0" }, chips()),
       // 알림을 눌러 들어온 프로젝트는 다른 자료가 늦거나 실패해도 바로 열린다

@@ -34,6 +34,7 @@ const tabList = () => [["overdue", "🚨 " + t("미입금")], ["diff", "⚠ " + 
 export async function renderSettle(root, onBack) {
   const today = todayKST();
   let recv = [], deps = [], tab = "overdue", termDays = 30, busy = false, loadErr = null;
+  let unmatchedOpen = false; // '어느 건에도 안 맞는 입금' 목록을 펼쳐 뒀는지(다시 그려도 그대로)
 
   async function load() {
     try { [recv, deps] = await Promise.all([api.stRecv(), api.stDeps()]); loadErr = null; } catch (e) { loadErr = e.message; }
@@ -187,7 +188,7 @@ export async function renderSettle(root, onBack) {
           h("h2", { class: "sec-title" }, t("확인하기")),
           h("div", { class: "tabs" }, tabList().map(([k, l]) => h("button", { class: "tab" + (tab === k ? " on" : ""), onclick: () => { tab = k; draw(); } }, `${l} ${group(k).length}`))),
           list.length ? list.map(rowView) : h("p", { class: "muted" }, tab === "overdue" ? t("미입금 건이 없어요 🎉") : t("해당 건이 없어요")),
-          tab === "done" && unmatchedDeposits.length > 0 && h("details", { style: "margin-top:12px" },
+          tab === "done" && unmatchedDeposits.length > 0 && h("details", { style: "margin-top:12px", open: unmatchedOpen, ontoggle: (e) => { unmatchedOpen = e.target.open; } },
             h("summary", null, t("어느 건에도 안 맞는 입금 {n}건 (참고)", { n: unmatchedDeposits.length })),
             unmatchedDeposits.slice().sort((a, b) => b.date.localeCompare(a.date)).slice(0, 60).map((d) => h("div", { class: "muted" }, `${d.date}  ${won(d.amount)}  ${d.memo}`))),
         ]));

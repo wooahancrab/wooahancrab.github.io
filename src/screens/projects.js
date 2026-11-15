@@ -849,7 +849,7 @@ export async function renderProjects(root, opts = {}) {
         pj, profile: prof, isTop, postId: session.postId,
         reloadProject: async () => {
           const r = await syncProject(session);
-          if (r.ok && r.changed && mine(session)) showTab(session);
+          if (r.ok && r.changed && mine(session)) showTab(session, true);
         },
         goFiles: () => switchTab(session, "files"),
         goFeed: () => switchTab(session, "feed"),
@@ -903,7 +903,7 @@ export async function renderProjects(root, opts = {}) {
   async function refreshAll(session) {
     if (!mine(session)) return;
     const r = await syncProject(session);
-    if (r.ok && mine(session)) showTab(session);
+    if (r.ok && mine(session)) showTab(session, true);
   }
 
   function drawProject(session) {
@@ -989,10 +989,13 @@ export async function renderProjects(root, opts = {}) {
   }
 
   // 탭 안을 새로 그린다. 탭마다 새 칸을 만들어, 떠난 탭의 늦게 끝난 그리기가 지금 화면을 덮어쓰지 못하게 한다
-  async function showTab(session) {
+  // keep: 같은 탭을 다시 불러오는 것(새로고침·설정 저장·참여 뒤)이라 보던 자리를 그대로 둔다. 다시 그리는 동안 칸 높이를 붙잡아 화면이 짧아져 위로 밀리지 않게 하고, 다 그린 뒤 되돌린다
+  async function showTab(session, keep) {
     if (!mine(session)) return;
     runLeave(session); // 떠나는 탭이 맡긴 마무리(읽음 전송 등)를 칸을 바꾸기 전에 실행
     const tab = session.tab;
+    const y = keep ? scrollY : -1;
+    session.body.style.minHeight = keep ? session.body.offsetHeight + "px" : "";
     const pane = h("div", { class: "pj-pane" }, h("p", { class: "muted" }, t("불러오는 중…")));
     session.pane = pane;
     put(session.body, pane);
@@ -1019,6 +1022,12 @@ export async function renderProjects(root, opts = {}) {
         h("p", { class: "err" }, t("이 화면을 불러오지 못했어요. 앱을 새로고침한 뒤 다시 시도해 주세요.")),
         h("p", { class: "muted" }, t(String((e && e.message) || e)).slice(0, 160)),
         h("button", { type: "button", class: "btn ghost slim", onclick: () => showTab(session) }, t("다시 시도")));
+    } finally {
+      // 내가 그린 칸이 아직 화면에 있을 때만 높이 고정을 풀고 보던 자리로 되돌린다(그 사이 다른 탭을 눌렀다면 그쪽이 맡는다)
+      if (keep && session.pane === pane && session.body.isConnected) {
+        session.body.style.minHeight = "";
+        scrollTo(0, y);
+      }
     }
   }
 

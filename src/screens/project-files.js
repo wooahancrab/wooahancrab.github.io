@@ -254,7 +254,11 @@ export async function renderFiles(root, ctx) {
   /* ---------- 목록 불러오기 ---------- */
   async function load(reset) {
     const my = ++gen;
+    const y = window.scrollY; // 비웠다가 다시 채우는 동안 화면이 짧아져 밀려도 채운 뒤 이 자리로 되돌린다
+    const box = listBox.parentElement;
     if (reset) {
+      // 비우는 동안 화면이 짧아져 위로 튀지 않게 파일 칸의 높이를 붙잡아 둔다(새 목록을 그린 뒤 푼다)
+      if (rows.length && box && !box.style.minHeight) box.style.minHeight = box.offsetHeight + "px";
       rows = [];
       hasMore = false;
       err = "";
@@ -287,7 +291,10 @@ export async function renderFiles(root, ctx) {
     }
     loading = false;
     moreBusy = false;
-    if (alive()) drawList();
+    if (alive()) {
+      try { drawList(); } finally { if (reset && box) box.style.minHeight = ""; }
+      if (reset) window.scrollTo(0, y);
+    }
   }
 
   /* ---------- 그리기 ---------- */

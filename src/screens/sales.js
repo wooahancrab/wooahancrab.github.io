@@ -43,6 +43,13 @@ export async function renderSales(root, onBack, opts = {}) {
   const thisMonth = today.slice(0, 7);
   const prevMonth = addDays(thisMonth + "-01", -1).slice(0, 7);
   let recv = [], deps = [], wds = [], rules = [], invs = [], err = "", loading = true, view = thisMonth;
+  // 펼쳐 둔 목록은 다시 그려도 그대로 펼쳐 둔다(분류를 저장하고 나면 접혀서 보던 자리를 잃지 않게)
+  const opened = {};
+  const det = (key, props, ...kids) => {
+    const d = h("details", { ...props, open: opened[key] }, ...kids);
+    d.addEventListener("toggle", () => { opened[key] = d.open; });
+    return d;
+  };
 
   async function load() {
     try {
@@ -118,7 +125,7 @@ export async function renderSales(root, onBack, opts = {}) {
 
       h("section", { class: "card" }, h("h2", null, t("입금 구분")),
         share(inB.map((g) => ({ name: lbl(g.group), total: g.total }))),
-        inB.length ? inB.map((g) => h("details", { style: "margin:6px 0" },
+        inB.length ? inB.map((g) => det(`${view}|in|${g.group}`, { style: "margin:6px 0" },
           h("summary", null, h("b", null, lbl(g.group)), `  ${won(g.total)}  (${cnt(g.n)})`),
           g.items.slice(0, 15).map((i) => h("div", { class: "lrow" }, h("span", { class: "muted" }, lbl(i.name)), h("span", { class: "num" }, won(i.total))))))
           : h("p", { class: "muted" }, t("이 달 입금 내역이 없어요")),
@@ -126,7 +133,7 @@ export async function renderSales(root, onBack, opts = {}) {
 
       h("section", { class: "card" }, h("h2", null, t("지출 분석 (출금)")),
         share(sp.cats.map((c) => ({ name: lbl(c.name), total: c.total }))),
-        sp.cats.length ? sp.cats.map((c) => h("details", { style: "margin:6px 0" },
+        sp.cats.length ? sp.cats.map((c) => det(`${view}|sp|${c.name}`, { style: "margin:6px 0" },
           h("summary", null, h("b", null, lbl(c.name)), `  ${won(c.total)}  (${cnt(c.n)})`),
           c.items.slice(0, 25).map((i) => h("div", { class: "lrow" }, h("span", { class: "muted" }, lbl(i.name), " ", h("button", { class: "linkbtn", onclick: () => assign(i.name, c.name) }, t("분류"))), h("span", { class: "num" }, won(i.total))))))
           : h("p", { class: "muted" }, t("출금 내역이 없어요. 통장 거래내역을 올리면 나와요.")),
@@ -134,9 +141,9 @@ export async function renderSales(root, onBack, opts = {}) {
           h("b", null, t("분류 확인이 필요한 거래처 {n}곳", { n: sp.unsure.length })),
           h("span", { class: "muted" }, t("쌀·식자재 등 매입처가 사람 이름으로 찍힌 경우예요. 눌러서 항목을 정해 두면 매달 자동으로 분류돼요.")),
           sp.unsure.slice(0, 12).map((i) => h("div", { class: "lrow", style: "width:100%" },h("span", null, lbl(i.name)), h("span", null, won(i.total), " ", h("button", { class: "btn ghost slim", onclick: () => assign(i.name, i.from) }, t("분류")))))),
-        rules.length > 0 && h("details", { style: "margin-top:8px" }, h("summary", null, t("정해 둔 거래처 분류 {n}개", { n: rules.length })),
+        rules.length > 0 && det("rules", { style: "margin-top:8px" }, h("summary", null, t("정해 둔 거래처 분류 {n}개", { n: rules.length })),
           rules.map((r) => h("div", { class: "lrow" }, h("span", null, r.keyword," → ", h("b", null, lbl(r.category))), h("button", { class: "linkbtn", onclick: () => unassign(r.keyword) }, t("지우기"))))),
-        sp.daily.length > 0 && h("details", null, h("summary", null, t("일별 지출 ({n}일)", { n: sp.daily.length })),
+        sp.daily.length > 0 && det(`${view}|daily`, null, h("summary", null, t("일별 지출 ({n}일)", { n: sp.daily.length })),
           h("table", { class: "stats" }, h("tbody", null, sp.daily.map((d) => h("tr", null, h("td", null, d.date.slice(5)), h("td", { class: "num", style: "text-align:right" }, won(d.amount)))))))),
 
       h("section", { class: "card" }, h("h2", null, "🧾 " + t("계산서 대조 (매입)")),
@@ -162,7 +169,7 @@ export async function renderSales(root, onBack, opts = {}) {
                 h("b", { class: "num" }, won(u.total))))
               : h("p", { class: "muted" }, t("없어요 🎉")),
             h("p", { class: "muted" }, t("급여·임차료·세금·대출처럼 계산서가 없어도 되는 건 '분류'로 항목을 정해 주면 여기서 빠져요.")),
-            h("details", { style: "margin-top:8px" }, h("summary", null, t("거래처별 전체 보기")),
+            det("vendors", { style: "margin-top:8px" }, h("summary", null, t("거래처별 전체 보기")),
               inv.vendors.map((v) => h("div", { class: "lrow" },
                 h("span", null, v.name, " ", h("span", { class: "muted" }, t("{cat} · 계산서 {inv} / 출금 {paid}", { cat: lbl(v.category), inv: won(v.invoiced), paid: won(v.paid) }))),
                 h("span", { class: v.status === "완납" ? "ok-text" : v.status === "초과" ? "muted" : "err" }, lbl(v.status))))),

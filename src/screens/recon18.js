@@ -4,7 +4,7 @@ import { api } from "../lib/api.js";
 import { h, toast, modal, confirmDialog } from "../lib/ui.js";
 import { todayKST, addDays, labelMD, monthLabel, dow } from "../lib/kst.js";
 import { t, tx, lang, dowNames } from "../lib/i18n.js";
-import { METHODS, METHOD_LABEL, DEFAULT_DAYS, DEFAULT_TOL, STATUS_KEYS, buildDetail, statusLabel, canViewFinance, periodOf, analyze, fromBankDeposits, parseSalesRows, parseDepositRows, fmtMan, fmtPct, fmtWon, fmtDec, roundsToMan, prevMonth, nextMonth, monthEnd, daysBetween, inferMethod } from "../lib/recon18.js";
+import { METHODS, METHOD_LABEL, DEFAULT_DAYS, DEFAULT_TOL, STATUS_KEYS, buildDetail, noteKey, statusLabel, canViewFinance, periodOf, analyze, fromBankDeposits, parseSalesRows, parseDepositRows, fmtMan, fmtPct, fmtWon, fmtDec, roundsToMan, prevMonth, nextMonth, monthEnd, daysBetween, inferMethod } from "../lib/recon18.js";
 import { demoData } from "../lib/recon18-demo.js";
 
 const XLSX_URL = "https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js";
@@ -70,14 +70,21 @@ export async function renderRecon18(root, onBack, opts = {}) {
   const st = { src: "demo", data: clone({ sales: demo.sales, deposits: demo.deposits }), settings: clone(demo.settings), sel: null, busy: false, bankRange: null, notes: {}, open: null, last: null };
   let shown = null;
 
-  function draw() {
+  // keep: 다시 그린 뒤에도 화면에서 같은 자리에 두고 싶은 줄의 이름(data-rk)을 우선순위대로. 위쪽 상세가 접히거나 줄이 사라져도 보던 줄이 튀지 않게 한다
+  const rkEl = (k) => root.querySelector(`[data-rk="${String(k).replace(/["\\]/g, "\\$&")}"]`);
+  function draw(keep) {
     if (shown && (!root.isConnected || root.firstChild !== shown)) return; // 다른 화면으로 넘어갔다
     const y = scrollY;
+    const was = keep ? keep.map((k) => rkEl(k)?.getBoundingClientRect().top ?? null) : null;
     let v;
     try { v = view(); } catch (e) { console.error(e); v = h("div", { class: "page" }, back(), h("p", { class: "err" }, t("화면을 그리지 못했어요. 앱을 다시 열어 주세요."))); }
     root.replaceChildren(v);
     shown = v;
     scrollTo(0, y);
+    if (was) for (let i = 0; i < keep.length; i++) {
+      const el = was[i] == null ? null : rkEl(keep[i]);
+      if (el) { scrollBy(0, el.getBoundingClientRect().top - Math.max(was[i], 8)); break; }
+    }
   }
   const alive = () => !shown || (root.isConnected && root.firstChild === shown);
   const isDemoSrc = () => st.src === "demo";
@@ -362,16 +369,17 @@ export async function renderRecon18(root, onBack, opts = {}) {
     dep.saleDate = r.date; dep.linked = true; dep.method = r.method;
     st.open = null;
     toast(t("{dep} 입금을 {sale} {method} 매출에 연결했어요", { dep: labelMD(dep.date), sale: labelMD(r.date), method: METHOD_LABEL[r.method] }), 3500);
-    draw();
+    draw(["m:" + noteKey(r), "miss"]); // 상세가 접히고 줄이 사라져도 점검표 자리에 머문다
   }
   function unlinkDeposit(idx) {
     const dep = st.data.deposits[idx]; if (!dep) return;
+    const rk = "m:" + dep.saleDate + "|" + dep.method; // 풀면 이 매출 줄이 점검표로 되돌아오고 위쪽에 경고가 생기기도 해서, 보던 줄(없으면 점검표 위치)에 머문다
     dep.saleDate = dep.origSaleDate ?? null;
     if (dep.origMethod === undefined) delete dep.method; else dep.method = dep.origMethod;
     dep.linked = false;
     delete dep.origSaleDate; delete dep.origMethod;
     toast(t("연결을 풀었어요"), 2500);
-    draw();
+    draw([rk, "miss"]);
   }
   const setNote = (key, patch) => { st.notes[key] = { ...(st.notes[key] ?? {}), ...patch }; };
 
@@ -430,8 +438,8 @@ export async function renderRecon18(root, onBack, opts = {}) {
   function missingTable(res) {
     const rows = res.missing.map((r) => {
       const d = buildDetail(r, res, st.notes), isOpen = st.open === d.key, over = r.state === "over";
-      return h("div", { class: "rc-miss" + (isOpen ? " open" : "") },
-        h("button", { type: "button", class: "rc-miss-head", "aria-expanded": isOpen ? "true" : "false", onclick: () => { st.open = isOpen ? null : d.key; draw(); } },
+      return h("div", { class: "rc-miss" + (isOpen ? " open" : ""), "data-rk": "m:" + d.key },
+        h("button", { type: "button", class: "rc-miss-head", "aria-expanded": isOpen ? "true" : "false", onclick: () => { st.open = isOpen ? null : d.key; draw(["m:" + d.key]); } }, // 다른 줄이 열려 있어도 누른 줄이 제자리에 있게
           h("div", { class: "rc-row1" }, h("b", null, `${labelMD(r.date)} · ${METHOD_LABEL[r.method]}`),
             h("span", { class: "badges" }, h("span", { class: "badge bad" }, over ? t("초과 입금") : t("누락 의심")), r.est && h("span", { class: "badge" }, t("추정")),
               d.status !== "pre" && h("span", { class: "badge " + (d.status === "done" ? "ok" : "warn") }, d.statusText),
@@ -442,7 +450,7 @@ export async function renderRecon18(root, onBack, opts = {}) {
     });
     const needFee = res.feeRates.some((f) => f.feeDone === 0 && f.salesDone > 0 && f.method !== "cash");
     const confirmed = res.rows.filter((r) => r.confirmed), anyEst = confirmed.some((r) => r.est && !r.explicit);
-    return h("section", { class: "sec stack" },
+    return h("section", { class: "sec stack", "data-rk": "miss" },
       h("h2", { class: "sec-title" }, t("누락 점검표") + " " + (res.missing.length ? t("({n}건)", { n: res.missing.length }) : "")),
       h("p", { class: "hint" }, t("입금 기한이 지났는데 입금이 안 맞는 매출이에요. 차이는 빨간색.")),
       res.missing.length ? h("div", { class: "rowlist" }, rows)

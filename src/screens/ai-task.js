@@ -823,11 +823,12 @@ export async function renderAiTask(root, opts = {}) {
 
   async function retry(list) {
     if (st.busy || !list.length) return;
+    const y = scrollY; // 보내는 동안 화면이 잠깐 짧아져 위치가 눌리므로, 끝나면 누른 자리로 되돌린다
     st.busy = true;
     st.phase = "saving";
     for (const r of list) { r.state = "wait"; r.note = ""; }
     draw();
-    try { await runSend(list); } finally { st.busy = false; st.phase = "result"; draw(); finishNote(); refreshQuiet(); }
+    try { await runSend(list); } finally { st.busy = false; st.phase = "result"; draw(); if (!gone() && root.isConnected) scrollTo(0, y); finishNote(); refreshQuiet(); }
   }
 
   // 보내는 도중 사용자가 다른 화면으로 가 버렸다면 결과를 짧게 알려 준다

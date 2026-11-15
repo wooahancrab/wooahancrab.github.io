@@ -34,13 +34,14 @@ export async function renderAttendanceAdmin(root, onBack, opts = {}) {
 
   const draw = () => { const y = scrollY; root.replaceChildren(view()); scrollTo(0, y); };
 
+  let loaded = false; // 처음 불러올 때만 '불러오는 중…'을 보인다. 저장·승인 뒤 다시 불러올 때 화면을 비우면 짧아진 화면 때문에 보던 위치가 맨 위로 올라간다
   async function load() {
-    loading = true; draw();
+    if (!loaded) { loading = true; draw(); }
     try {
       [emps, rows, store] = await Promise.all([api.attEmployees(), api.attAll(addDays(today, -120)), api.attStore()]);
       err = "";
     } catch (e) { err = e.message; }
-    loading = false; draw();
+    loading = false; loaded = true; draw();
   }
 
   const empName = (id) => emps.find((e) => e.user_id === id)?.display_name;
@@ -97,7 +98,7 @@ export async function renderAttendanceAdmin(root, onBack, opts = {}) {
         h("div", { class: "top2" }, h("b", null, nameOf(r)), badge(t("승인 대기"), "info")),
         h("span", null, `${labelMD(r.work_date)} ${fmtHM(r.in_at)} ~ ${fmtHM(r.out_at)} (${fmtDur(recMinutes(r))})`),
         h("div", { class: "acc-btns" },
-          h("button", { class: "btn ghost slim", onclick: async () => { try { await api.attApprove(r.id); toast(t("승인했어요")); await load(); } catch (e) { toast(errText(e.message), 5000); } } }, tx("관리", "승인")),
+          h("button", { class: "btn ghost slim", onclick: async (ev) => { const b = ev.currentTarget; if (b.disabled) return; b.disabled = true; try { await api.attApprove(r.id); toast(t("승인했어요")); await load(); } catch (e) { b.disabled = false; toast(errText(e.message), 5000); } } }, tx("관리", "승인")), // 다시 불러오는 동안 같은 버튼을 또 눌러 두 번 승인되지 않게 잠근다
           h("button", { class: "btn weak slim", onclick: () => editRecord(r) }, tx("관리", "수정"))))),
       !missing.length && !pending.length && h("p", { class: "muted" }, t("확인할 항목이 없어요 👍")));
   }

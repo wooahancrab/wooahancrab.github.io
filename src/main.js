@@ -168,7 +168,13 @@ function tabbedHome(view, profile, tabs) {
       h("button", { class: "tab" + (tab === k ? " on" : ""), onclick: () => { tab = k; show(); } }, l))));
     const row = bar.querySelector(".tabs");
     row.scrollLeft = x;
-    bar.querySelector(".tab.on")?.scrollIntoView?.({ inline: "nearest", block: "nearest" });
+    // 고른 탭이 줄 안에 보이게 옆으로만 민다. scrollIntoView 는 세로로도 움직여서, 아래로 내려 본 뒤 탭이 늦게 추가되면 화면이 맨 위로 올라갔다
+    const on = bar.querySelector(".tab.on");
+    if (on) {
+      const rr = row.getBoundingClientRect(), tr = on.getBoundingClientRect();
+      if (tr.left < rr.left) row.scrollLeft += tr.left - rr.left;
+      else if (tr.right > rr.right) row.scrollLeft += tr.right - rr.right;
+    }
   };
   const show = async () => {
     curTab = tab;

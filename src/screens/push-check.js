@@ -16,7 +16,8 @@ export async function openPushCheck() {
     !ok && hint && h("div", { class: "muted", style: "margin-left:22px" }, hint));
 
   async function draw(testMsg) {
-    body.replaceChildren(h("p", { class: "muted" }, t("확인하는 중…")));
+    // 처음에만 '확인하는 중…'을 보인다. 버튼을 눌러 다시 확인할 때 내용을 비우면 창이 짧아져 아래로 내려 둔 위치가 맨 위로 올라간다
+    if (!body.firstChild) body.replaceChildren(h("p", { class: "muted" }, t("확인하는 중…")));
     const s = await api.pushStatus();
     const items = [];
     if (s.kakao) items.push(row(false, t("카톡 안에서 열었어요"), t("카톡 안에서는 알림이 안 돼요. 크롬(안드로이드)이나 사파리(아이폰)로 열어 주세요.")));

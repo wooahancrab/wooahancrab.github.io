@@ -30,6 +30,13 @@ async function saveXlsx(rows, sheetName, fileName) {
 export async function renderShip(root) {
   const stamp = todayKST().slice(5).replace("-", "");
   let ch = "smart", parsed = null, matched = null, busy = false, msg = "";
+  // 펼치거나 접어 둔 목록은 다시 그려도 그대로 둔다(새 파일을 읽으면 처음 상태로)
+  let folds = {};
+  const det = (key, open, ...kids) => {
+    const d = h("details", { open: key in folds ? folds[key] : open }, ...kids);
+    d.addEventListener("toggle", () => { folds[key] = d.open; });
+    return d;
+  };
 
   function pick(accept, handler) {
     const inp = h("input", { type: "file", accept, style: "display:none" });
@@ -42,10 +49,10 @@ export async function renderShip(root) {
     document.body.append(inp); inp.click(); setTimeout(() => inp.remove(), 60000);
   }
 
-  const step1 = () => pick(".xlsx,.xls", async (sheets) => { parsed = parseOrders(ch, sheets); matched = null; });
+  const step1 = () => pick(".xlsx,.xls", async (sheets) => { parsed = parseOrders(ch, sheets); matched = null; folds = {}; });
   const step2 = () => pick(".xlsx,.xls", async (sheets) => {
     if (!parsed) throw new Error(t("먼저 1단계에서 발주서를 올려 주세요"));
-    matched = matchTracking(parsed.orders, parseLogenReturn(sheets));
+    matched = matchTracking(parsed.orders, parseLogenReturn(sheets)); delete folds.missing;
     toast(t("송장번호 {n}건 맞췄어요", { n: matched.done.length }) + (matched.missing.length ? " · " + t("못 맞춘 {n}건", { n: matched.missing.length }) : ""), 5000);
   });
 
@@ -56,7 +63,7 @@ export async function renderShip(root) {
     root.replaceChildren(h("div", { class: "page" },
       h("h1", null, "📦 " + t("송장 처리")),
       h("p", { class: "hint" }, t("주문자 정보가 든 파일은 서버에 저장하지 않아요. 이 화면을 닫으면 사라져요.")),
-      h("div", { class: "tabs" }, Object.entries(CHANNELS).map(([k, v]) => h("button", { class: "tab" + (ch === k ? " on" : ""), onclick: () => { ch = k; parsed = null; matched = null; msg = ""; draw(); } }, t(v.label)))),
+      h("div", { class: "tabs" }, Object.entries(CHANNELS).map(([k, v]) => h("button", { class: "tab" + (ch === k ? " on" : ""), onclick: () => { ch = k; parsed = null; matched = null; msg = ""; folds = {}; draw(); } }, t(v.label)))),
 
       h("section", { class: "sec stack" }, h("h2", { class: "sec-title" }, t("① 발주서 → 로젠 파일")),
         h("p", { class: "hint" }, t("{label}에서 받은 발주서(주문) 엑셀을 올리면, 로젠에 가져올 파일을 만들어 드려요.", { label: t(c.label) })),
@@ -65,7 +72,7 @@ export async function renderShip(root) {
         msg && h("p", { class: "err" }, msg),
         parsed && [
           h("p", null, h("b", null, t("주문 {n}건", { n: parsed.orders.length })), "  (" + t("상품 {n}개", { n: sum.reduce((s, x) => s + x.qty, 0) }) + ")"),
-          h("details", null, h("summary", null, t("상품별 수량 보기")), sum.map((x) => h("div", { class: "lrow" }, h("span", { class: "muted" }, t(x.name)), h("b", null, x.qty)))),
+          det("sum", false, h("summary", null, t("상품별 수량 보기")), sum.map((x) => h("div", { class: "lrow" }, h("span", { class: "muted" }, t(x.name)), h("b", null, x.qty)))),
           h("button", { class: "btn ghost", onclick: () => saveXlsx(logenRows(parsed.orders), "Sheet1", `로젠_${c.label}_${stamp}.xlsx`) }, "⬇ " + t("로젠 파일 받기")),
         ]),
 
@@ -75,7 +82,7 @@ export async function renderShip(root) {
         matched && [
           h("p", null, h("b", { class: "ok-text" }, t("송장번호 {n}건 맞춤", { n: matched.done.length })),
             matched.missing.length > 0 && h("span", { class: "err" }, "  · " + t("못 맞춘 {n}건", { n: matched.missing.length }))),
-          matched.missing.length > 0 && h("details", { open: true }, h("summary", { class: "err" }, t("송장번호를 못 찾은 주문")),
+          matched.missing.length > 0 && det("missing", true, h("summary", { class: "err" }, t("송장번호를 못 찾은 주문")),
             matched.missing.slice(0, 30).map((o) => h("div", { class: "lrow" }, h("span", null, o.name), h("span", { class: "muted" }, o.phone)))),
           matched.extra.length > 0 && h("p", { class: "hint" }, t("발주서에 없는 송장 {n}건은 무시했어요", { n: matched.extra.length })),
           h("button", { class: "btn ghost", disabled: !matched.done.length, onclick: () => { const f = fillTracking(ch, parsed, matched.done); saveXlsx(f.rows, f.name, `송장_${c.label}_${stamp}.xlsx`); } }, "⬇ " + t("{label} 송장 파일 받기", { label: t(c.label) })),

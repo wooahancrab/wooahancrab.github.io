@@ -120,8 +120,18 @@ export async function renderOwner(root, ctx, opts = {}) {
   const isMaster = ctx.role === "owner"; // 부대표는 계정·설정을 바꿀 수 없다
   const canFinance = canViewFinance(ctx.role); // 매출-입금 대조: 대표·부대표·회장 (서버 can_view_finance 와 같다)
 
+  // 하위 화면(출퇴근·매출·클레임 등)을 보는 중인가: 늦게 끝난 불러오기가 그 화면을 다시 그려 지우지 않게 한다
+  const inSub = () => showTk || showChk || showCl || showSales || showWork || showShip || showSettle || showRecon || showAtt;
+  // 지금 그리는 화면 이름(draw 의 분기 순서와 같다). 같은 화면을 다시 그릴 때는 보던 자리를 그대로 두고,
+  // 다른 화면으로 가면 맨 위에서, 목록(main)으로 돌아오면 떠나기 전 자리에서 시작한다
+  const viewName = () => showTk ? "tk" : showChk ? "chk" : showCl ? "cl" : showSales ? "sales" : showWork ? "work" : showShip ? "ship" : showSettle ? "settle" : showRecon && canFinance ? "recon" : showAtt ? "att" : showAccounts ? "accounts" : detail ? "detail" : "main";
+  let lastView = "main", mainY = 0;
+
   const draw = () => {
     const y = scrollY;
+    const now = viewName(), prev = lastView;
+    if (now !== prev && prev === "main") mainY = y;
+    lastView = now;
     if (showTk) {
       const holder = h("div");
       root.replaceChildren(holder);
@@ -191,7 +201,7 @@ export async function renderOwner(root, ctx, opts = {}) {
       return;
     }
     root.replaceChildren(showAccounts ? accountsView() : detail ? detailView() : main());
-    scrollTo(0, showAccounts || detail ? 0 : y);
+    scrollTo(0, now === prev ? y : now === "main" ? mainY : 0);
   };
 
   async function loadUsers() {
@@ -291,7 +301,7 @@ export async function renderOwner(root, ctx, opts = {}) {
       h("button", { class: "linkbtn back", onclick: () => { if (opts.allAccounts) opts.onBack?.(); else { showAccounts = false; draw(); } } }, t("← 목록")),
       h("h1", null, opts.allAccounts ? t("전체 계정 관리") : t("계정 관리")),
       h("p", { class: "muted" }, t("비밀번호는 저장되지 않아요(자동 생성한 임시 비밀번호는 만든 직후 한 번만 보여요). 잊으면 새로 정해 주세요.")),
-      usersBusy && h("p", { class: "muted" }, t("불러오는 중…")),
+      usersBusy && !users.length && h("p", { class: "muted" }, t("불러오는 중…")), // 목록이 이미 있으면(저장 뒤 다시 불러올 때) 줄을 끼워 넣지 않아 보던 자리가 밀리지 않는다
       usersMsg && h("p", { class: "err" }, errText(usersMsg)),
       ...groupedUsers().map(([label, list]) => [h("h2", { class: "cat-title" }, tx("계정 관리", "{label} ({n}명)", { label, n: list.length })), list.length > 0 && h("div", { class: "rowlist" }, list.map((u) => h("div", { class: "acc" },
         h("div", null, h("b", null, u.display_name || t("(이름 없음)")), u.job_title && h("span", { class: "muted" }, " · " + u.job_title), " ", h("span", { class: "badge" }, roleName(u.role))),
@@ -338,12 +348,12 @@ export async function renderOwner(root, ctx, opts = {}) {
 
   async function loadCl() {
     try { clOpen = (await api.clList("open")).claims; } catch { clOpen = null; }
-    if (!showAccounts && !showAtt && !showCl && !showChk && !showRecon && !detail) draw();
+    if (!showAccounts && !detail && !inSub()) draw();
   }
 
   async function load() {
     try { rows = hasReport ? await api.listReports(addDays(today, -190)) : []; err = null; } catch (e) { err = e.message; }
-    loading = false; if (!showRecon) draw(); // 매출-입금 대조를 보는 중이면 다시 그려서 입력을 지우지 않는다(돌아오면 그때 그린다)
+    loading = false; if (!inSub()) draw(); // 하위 화면(매출-입금 대조 등)을 보는 중이면 다시 그려서 입력·위치를 지우지 않는다(돌아오면 그때 그린다)
   }
 
   const byDate = () => Object.fromEntries(rows.map((r) => [r.report_date, r]));
@@ -452,5 +462,5 @@ export async function renderOwner(root, ctx, opts = {}) {
   // 푸시 알림에서 열린 경우 ?d=날짜 상세로
   await load();
   const q = new URLSearchParams(location.search).get("d");
-  if (q) { detail = { date: q, r: byDate()[q] }; if (!showRecon) draw(); } // 매출-입금 대조를 보는 중이면 다시 그려서 입력을 지우지 않는다
+  if (q) { detail = { date: q, r: byDate()[q] }; if (!inSub()) draw(); } // 하위 화면(매출-입금 대조 등)을 보는 중이면 다시 그려서 입력을 지우지 않는다
 }

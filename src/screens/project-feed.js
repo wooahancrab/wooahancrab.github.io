@@ -675,6 +675,8 @@ export async function renderFeed(root, ctx) {
     st.err = "";
     st.reloading = true; // 다시 받는 동안은 '이전 글 더 보기'를 막는다(옛 cursor 로 받으면 중간이 비어 보인다)
     if (!quiet) {
+      // 비우는 동안 화면이 짧아져 위로 튀지 않게 피드 칸의 높이를 붙잡아 둔다(새 목록을 그린 뒤 푼다)
+      if ((st.rows.length || st.pinned.length) && !wrap.style.minHeight) wrap.style.minHeight = wrap.offsetHeight + "px";
       st.rows = []; st.pinned = []; st.hasMore = false; st.cursor = null; st.loading = true;
       drawList();
     } else {
@@ -701,8 +703,10 @@ export async function renderFeed(root, ctx) {
     st.loading = false;
     st.reloading = false;
     renderChips();
-    drawList();
-    if (quiet && alive()) window.scrollTo(0, y);
+    // 조용한 새로고침은 기다리는 동안 사용자가 옮긴 자리를, 검색·필터처럼 비웠다가 다시 채운 경우는 그때의 자리를 되돌린다(비운 사이 화면이 짧아져 위로 밀린 것을 원래 자리로)
+    const keepY = quiet ? window.scrollY : y;
+    try { drawList(); } finally { wrap.style.minHeight = ""; }
+    if (alive()) window.scrollTo(0, keepY);
     if (!st.err) loadCounts();
     // 알림·링크로 연 글: 첫 쪽에 없는 오래된 글이면 찾을 때까지 다음 쪽을 받아 온 뒤 이동한다. 불러오기에 실패했으면 다시 시도할 때를 위해 남겨 둔다
     if (focusId && !st.err) {

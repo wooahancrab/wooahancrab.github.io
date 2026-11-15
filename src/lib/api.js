@@ -47,6 +47,8 @@ const demo = {
   async sgList() { return []; },
   async sgSet() {},
   async sgDelete() {},
+  async sgUrls() { return new Map(); },
+  async sgUrl() { throw new Error("데모 모드에서는 파일을 열 수 없어요"); },
   async pj() { throw new Error("데모 모드에서는 프로젝트를 쓸 수 없어요"); },
   async pushStatus() { return { supported: false, permission: "unsupported" }; },
   async pushTest() { throw new Error("데모 모드에서는 알림을 시험할 수 없어요"); },
@@ -152,6 +154,82 @@ function b64ToU8(b64) {
   const pad = "=".repeat((4 - (b64.length % 4)) % 4);
   const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
   return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+/* ---------------- 건의함 첨부 (supabase/suggestions-files.sql) ---------------- */
+// 비공개 보관함 suggest-files. 경로는 {uid}/{무작위 id}.{확장자} (ASCII) — 한글·공백 이름은 경로에 쓰지 않고 원래 이름은 건의 행의 files[].name 에만 둔다.
+const SG_BUCKET = "suggest-files";
+const SG_MAX = 5; // 건의 하나에 붙일 수 있는 개수(DB 검사와 같게)
+const SG_URL_KEEP_MS = 55 * 60 * 1000; // 1시간짜리 주소는 55분만 기억(만료 직전 주소를 쓰지 않도록)
+const sgUrlCache = new Map(); // 경로 -> { url, exp }
+// 보관함이 받는 파일 종류(supabase/suggestions-files.sql 4번의 allowed_mime_types 와 같게 유지). 이 밖이면 octet-stream 으로 올린다
+const SG_MIME = new Set([
+  "image/jpeg", "image/png", "image/gif", "image/webp", "image/heic", "image/heif",
+  "application/pdf",
+  "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-powerpoint", "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "application/x-hwp", "application/haansofthwp", "application/vnd.hancom.hwp", "application/vnd.hancom.hwpx", "application/hwp+zip",
+  "text/plain", "text/csv", "application/csv",
+  "application/zip", "application/x-zip-compressed",
+  "application/octet-stream",
+]);
+const SG_MIME_ALIAS = { "image/pjpeg": "image/jpeg", "image/x-png": "image/png" };
+const SG_PATH_OK = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\/[A-Za-z0-9._-]+$/i;
+// 건의 행의 files 에서 지울 수 있는 경로만(모양이 맞는 것). 남이 쓴 값이라 그대로 믿지 않는다
+const sgPaths = (files) => (Array.isArray(files) ? files : []).map((f) => f && f.path).filter((p) => typeof p === "string" && SG_PATH_OK.test(p) && !p.includes(".."));
+const sgCleanName = (s) => String(s ?? "").replace(/[\u0000-\u001f\u007f‪-‮⁦-⁩]/g, "");
+const sgShort = (s) => { const a = [...sgCleanName(s)]; return a.length > 30 ? a.slice(0, 29).join("") + "…" : a.join(""); };
+// 첨부 열·보관함이 아직 없다는 오류인가(suggestions-files.sql 을 안 돌린 서버)
+function sgNotReady(e) {
+  const m = String((e && e.message) || ""), code = String((e && (e.code || e.statusCode || e.status)) || "");
+  return /bucket not found/i.test(m) || code === "PGRST204" || code === "42703" || (/files/i.test(m) && /column|schema cache/i.test(m));
+}
+// 첨부가 있는 건의 보내기: 파일을 한 개씩 올리고 → 건의 행 저장. 어느 단계든 실패하면 올린 파일을 치우고(가능한 만큼) 건의는 저장하지 않는다.
+// opts.onProgress({ phase: "up"|"save", i, n }) 로 진행을 알린다. 사진은 폰에서 줄여(긴 변 1600px JPEG) 올린다.
+async function sgSendFiles(c, p, base, files, opts) {
+  const img = await import("./img.js");
+  if (files.length > SG_MAX) throw new Error(t("첨부는 최대 {max}개까지 붙일 수 있어요", { max: SG_MAX }));
+  for (const f of files) { const bad = img.checkFile(f); if (bad) throw new Error(bad); }
+  const bucket = c.storage.from(SG_BUCKET);
+  const tried = []; // 올리려고 시도한 경로 전부(응답이 끊겨도 서버에는 올라갔을 수 있어서)
+  const done = [];  // 건의 행에 적을 첨부 정보 {path,name,size,type}
+  let step = "up", cur = "";
+  try {
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      cur = sgShort(f.name);
+      if (opts.onProgress) opts.onProgress({ phase: "up", i: i + 1, n: files.length });
+      let blob = f, ext = img.extOf(f.name), type = "";
+      let name = sgCleanName(f.name) || "file";
+      if (img.isImage(f)) {
+        let r = null;
+        try { r = await img.resizeImage(f); } catch { r = null; }
+        if (r && r.big) { blob = r.big; ext = "jpg"; type = "image/jpeg"; name = name.replace(/\.[^./\\]+$/, "") + ".jpg"; }
+      }
+      if (!type) { // 줄이지 않은 파일: 보관함이 받는 종류가 아니면 octet-stream (File 은 contentType 옵션이 무시되고 file.type 이 그대로 가므로 Blob 으로 감싼다)
+        type = String(f.type || "").toLowerCase();
+        type = SG_MIME_ALIAS[type] ?? type;
+        if (!SG_MIME.has(type)) type = "application/octet-stream";
+        if (type !== f.type) blob = new Blob([f], { type });
+      }
+      const path = `${p.user_id}/${crypto.randomUUID()}.${ext}`;
+      tried.push(path);
+      const up = await bucket.upload(path, blob, { contentType: type, upsert: false });
+      if (up.error) throw up.error;
+      done.push({ path, name: [...name].slice(0, 200).join(""), size: blob.size, type }); // 글자(코드포인트) 단위로 자른다: DB 는 200자 이하만 받고, 쪼개진 이모지는 JSON 저장이 거절된다
+    }
+    step = "save";
+    if (opts.onProgress) opts.onProgress({ phase: "save", i: files.length, n: files.length });
+    const { error } = await c.from("suggestions").insert({ ...base, files: done });
+    if (error) throw error;
+  } catch (e) {
+    if (tried.length) { try { await bucket.remove(tried); } catch { /* 정리에 실패해도 원래 오류를 알린다(고아 파일은 남을 수 있다: suggestions-files.sql 설명) */ } }
+    console.warn("[건의 첨부]", e);
+    if (sgNotReady(e)) throw new Error("첨부 기능을 쓰려면 supabase/suggestions-files.sql 을 먼저 Run 해야 해요");
+    if (step === "up") throw new Error(t("{nm}: 올리지 못해서 건의를 보내지 않았어요. 다시 시도해 주세요", { nm: cur }));
+    throw new Error("건의를 보내지 못했어요. 다시 시도해 주세요");
+  }
 }
 
 const remote = {
@@ -472,9 +550,14 @@ const remote = {
     const { error } = await c.from("library_files").delete().eq("id", row.id); if (error) throw error;
   },
   // 건의함: 직원은 보내기만, 읽기·처리는 대표만(RLS)
-  async sgSend(row) {
+  // row.attach: 붙일 파일(File) 배열(선택, 5개까지). opts.onProgress: 올리는 진행 알림
+  async sgSend(row, opts = {}) {
     const p = await this.getProfile();
-    const { error } = await (await sb()).from("suggestions").insert({ store_id: p.store_id ?? null, author_id: p.user_id, author_name: p.display_name ?? "", anon: !!row.anon, category: row.category, body: row.body });
+    const base = { store_id: p.store_id ?? null, author_id: p.user_id, author_name: p.display_name ?? "", anon: !!row.anon, category: row.category, body: row.body };
+    const files = Array.isArray(row.attach) ? row.attach : [];
+    if (files.length) return sgSendFiles(await sb(), p, base, files, opts);
+    // 첨부가 없으면 예전과 똑같이: files 열을 보내지 않는다(suggestions-files.sql 을 아직 안 돌린 서버에서도 된다)
+    const { error } = await (await sb()).from("suggestions").insert(base);
     if (error) throw error;
   },
   async sgList() {
@@ -483,7 +566,52 @@ const remote = {
     return data;
   },
   async sgSet(id, patch) { const { error } = await (await sb()).from("suggestions").update(patch).eq("id", id); if (error) throw error; },
-  async sgDelete(id) { const { error } = await (await sb()).from("suggestions").delete().eq("id", id); if (error) throw error; },
+  // 건의를 지우면 붙은 파일도 보관함에서 지운다(파일을 못 지워도 건의 삭제는 그대로 진행하고, 남은 파일은 조용히 둔다)
+  async sgDelete(id) {
+    const c = await sb();
+    let paths = [];
+    try { // 첨부 경로를 먼저 읽어 둔다(files 열이 없는 서버면 오류가 나므로 건너뜀)
+      const { data } = await c.from("suggestions").select("files").eq("id", id).maybeSingle();
+      paths = sgPaths(data && data.files);
+    } catch { /* 첨부 없음으로 본다 */ }
+    const { error } = await c.from("suggestions").delete().eq("id", id); if (error) throw error;
+    if (paths.length) { try { await c.storage.from(SG_BUCKET).remove(paths); } catch { /* 남은 파일은 조용히 둔다 */ } }
+  },
+  // 첨부 파일 임시 주소(만들 수 있는 건 대표뿐: 보관함 읽기 정책). 사진 보기용은 1시간짜리를 55분 기억하고, 내려받기용(opts.download = 저장할 이름)은 60초짜리를 그때그때 만든다
+  async sgUrls(paths, opts) {
+    const out = new Map(), now = Date.now(), fresh = !!(opts && opts.fresh);
+    const want = [...new Set((paths || []).filter((x) => typeof x === "string" && x))];
+    const need = [];
+    for (const x of want) {
+      const c = fresh ? null : sgUrlCache.get(x);
+      if (c && c.exp > now) out.set(x, c.url); else need.push(x);
+    }
+    if (!need.length) return out;
+    const bucket = (await sb()).storage.from(SG_BUCKET);
+    for (let i = 0; i < need.length; i += 100) {
+      const part = need.slice(i, i + 100);
+      const { data, error } = await bucket.createSignedUrls(part, 3600);
+      if (error) throw error;
+      (data || []).forEach((d, k) => {
+        if (!d || d.error) return;
+        const x = d.path || part[k], u = d.signedUrl || d.signedURL;
+        if (!x || !u) return;
+        sgUrlCache.delete(x);
+        sgUrlCache.set(x, { url: u, exp: now + SG_URL_KEEP_MS });
+        out.set(x, u);
+      });
+    }
+    for (const k of sgUrlCache.keys()) { if (sgUrlCache.size <= 600) break; sgUrlCache.delete(k); }
+    return out;
+  },
+  async sgUrl(path, opts = {}) {
+    if (opts.download) {
+      const { data, error } = await (await sb()).storage.from(SG_BUCKET).createSignedUrl(path, 60, { download: opts.download === true ? true : String(opts.download) });
+      if (error) throw error;
+      return data.signedUrl;
+    }
+    return (await this.sgUrls([path], { fresh: !!opts.fresh })).get(path) ?? "";
+  },
   // 업무 기록(일지·일정·기록함): table = work_logs | work_events | work_notes. 보이는 범위는 서버(RLS)가 정한다.
   async wkList(table, all = false) { // all=true: 사업장 구분 없이 전체(대표·부대표 보고판용)
     let q = (await sb()).from(table).select("*");

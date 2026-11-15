@@ -20,7 +20,7 @@ export async function renderFinance(root) {
       seg(stores.map((s) => [s.id, s.display_name ?? s.name]), cur.id, (id) => { cur = stores.find((s) => s.id === id); show(); }),
       seg([["sales", "📊 " + t("매출·지출")], ["settle", "💰 " + t("통장·수금")]], mode, (k) => { mode = k; show(); }));
     const pane = h("div"); body.replaceChildren(pane);
-    if (mode === "sales") renderSales(pane, null, { onOpenSettle: () => { mode = "settle"; show(); } });
+    if (mode === "sales") renderSales(pane, null, { onOpenSettle: () => { mode = "settle"; show(); scrollTo(0, 0); } }); // 아래쪽 버튼으로 와도 새 화면은 맨 위부터(이전 화면의 스크롤 위치가 따라오지 않게)
     else renderSettle(pane, null);
   };
   root.append(bar, body);

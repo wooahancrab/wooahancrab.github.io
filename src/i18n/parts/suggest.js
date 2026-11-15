@@ -1,6 +1,6 @@
 // 번역 사전: 건의 화면. 키 = 화면에 쓰는 한국어 문장 그대로, 값 = 번역. {이름} 자리 표시는 번역에도 똑같이 남긴다.
 // ※ 베트남어·영어는 초안이다. 베트남어를 읽을 수 있는 사람이 확인한 뒤 확정한다(회사 용어는 용어집이 우선).
-// ※ "대표만 읽을 수 있어요" 계열 문구는 지금 실제(대표만 읽음)와 같게 번역했다. 읽는 사람이 바뀌면(6단계) 이 문구들을 함께 고친다.
+// ※ "대표만 읽을 수 있어요" 계열 문구는 지금 실제(대표만 읽음)와 같게 번역했다. 읽는 사람이 바뀌면(6단계) 이 문구들을 함께 고친다(첨부 안내 "대표만 볼 수 있어요"도 같다).
 export default {
   vi: {
     "💌 건의함": "💌 Hộp góp ý",
@@ -34,7 +34,23 @@ export default {
     "삭제": "Xóa",
     "이 건의를 지울까요?": "Xóa góp ý này?",
     "지우기": "Xóa",
+    // 사진·파일 첨부(직원 화면). 검사 문구({nm}: 20MB보다 커서…)·"올리는 중…"·"외 {n}건"·"{nm} 크게 보기" 등은 다른 사전(work·library·project-feed)에 이미 있어 그대로 쓴다
+    "📎 사진·파일 붙이기": "📎 Đính kèm ảnh/tệp",
+    "첨부 {n}/{max}": "Đính kèm {n}/{max}",
+    "상황을 보여 주는 사진·파일을 붙여 주세요. 하나에 20MB까지, 대표만 볼 수 있어요.": "Hãy đính kèm ảnh hoặc tệp cho thấy tình hình. Tối đa 20MB mỗi tệp, chỉ Giám đốc mới xem được.",
+    "첨부는 최대 {max}개까지 붙일 수 있어요": "Chỉ đính kèm được tối đa {max} tệp",
+    "{nm} 빼기": "Bỏ {nm}",
+    "보내는 중…": "Đang gửi…",
+    "첨부 기능을 불러오지 못했어요. 첨부 없이 보내거나 앱을 다시 열어 주세요": "Không tải được tính năng đính kèm. Hãy gửi không kèm tệp hoặc mở lại ứng dụng.",
+    // 사진·파일 첨부(대표 화면)
+    "첨부": "Tệp đính kèm",
+    "{nm} 내려받기": "Tải {nm} về",
+    "파일을 내려받지 못했어요": "Không tải được tệp về",
+    "첨부 {n}개도 함께 지워지고 되돌릴 수 없어요": "{n} tệp đính kèm cũng sẽ bị xóa và không thể khôi phục",
     // 서버·api 문구
+    "{nm}: 올리지 못해서 건의를 보내지 않았어요. 다시 시도해 주세요": "{nm}: Không tải lên được nên góp ý chưa được gửi. Vui lòng thử lại.",
+    "건의를 보내지 못했어요. 다시 시도해 주세요": "Không gửi được góp ý. Vui lòng thử lại.",
+    "첨부 기능을 쓰려면 supabase/suggestions-files.sql 을 먼저 Run 해야 해요": "Để dùng tính năng đính kèm, cần chạy (Run) supabase/suggestions-files.sql trước.",
   },
   en: {
     "💌 건의함": "💌 Suggestion box",
@@ -68,6 +84,22 @@ export default {
     "삭제": "Delete",
     "이 건의를 지울까요?": "Delete this suggestion?",
     "지우기": "Delete",
+    // 사진·파일 첨부(직원 화면). 검사 문구({nm}: 20MB보다 커서…)·"올리는 중…"·"외 {n}건"·"{nm} 크게 보기" 등은 다른 사전(work·library·project-feed)에 이미 있어 그대로 쓴다
+    "📎 사진·파일 붙이기": "📎 Attach photos or files",
+    "첨부 {n}/{max}": "Attachments {n}/{max}",
+    "상황을 보여 주는 사진·파일을 붙여 주세요. 하나에 20MB까지, 대표만 볼 수 있어요.": "Attach photos or files that show the situation. Up to 20MB each, and only the CEO can see them.",
+    "첨부는 최대 {max}개까지 붙일 수 있어요": "You can attach up to {max} files",
+    "{nm} 빼기": "Remove {nm}",
+    "보내는 중…": "Sending…",
+    "첨부 기능을 불러오지 못했어요. 첨부 없이 보내거나 앱을 다시 열어 주세요": "Couldn't load the attachment feature. Send without attachments or reopen the app.",
+    // 사진·파일 첨부(대표 화면)
+    "첨부": "Attachments",
+    "{nm} 내려받기": "Download {nm}",
+    "파일을 내려받지 못했어요": "Couldn't download the file",
+    "첨부 {n}개도 함께 지워지고 되돌릴 수 없어요": "{n} attachment(s) will also be deleted. This can't be undone",
     // 서버·api 문구
+    "{nm}: 올리지 못해서 건의를 보내지 않았어요. 다시 시도해 주세요": "{nm}: Couldn't upload, so your suggestion was not sent. Please try again.",
+    "건의를 보내지 못했어요. 다시 시도해 주세요": "Couldn't send your suggestion. Please try again.",
+    "첨부 기능을 쓰려면 supabase/suggestions-files.sql 을 먼저 Run 해야 해요": "To use attachments, supabase/suggestions-files.sql must be run first.",
   },
 };
