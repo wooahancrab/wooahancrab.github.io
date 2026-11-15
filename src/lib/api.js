@@ -4,6 +4,7 @@ import { summarize, defaultData } from "./report.js";
 import { todayKST, addDays, dow } from "./kst.js";
 import { attDemo } from "./att-demo.js";
 import { claimsDemo } from "./claims-demo.js";
+import { t } from "./i18n.js";
 
 export const isDemo = !(SUPABASE_URL && SUPABASE_ANON_KEY);
 
@@ -36,6 +37,7 @@ const demo = {
     const s = LS.get("woo_demo_session", null);
     return s ? { role: s.role, store_name: "본촌점", display_name: { owner: "대표(데모)", manager: "매니저(데모)", staff: "김자유(데모)" }[s.role] } : null;
   },
+  async setMyLang() { /* 데모 모드: 이 기기에만 저장(화면에서 처리) */ },
   async signIn(role) { LS.set("woo_demo_session", { role }); },
   async signOut() { localStorage.removeItem("woo_demo_session"); },
   setStore(st) { curStore = st; },
@@ -79,8 +81,8 @@ const demo = {
     const p = await Notification.requestPermission();
     if (p !== "granted") throw new Error("알림이 허용되지 않았어요");
     const reg = await navigator.serviceWorker?.ready;
-    const opt = { body: "데모: 실제 연결 후에는 보고가 올 때 이렇게 알려 드려요", icon: "icons/icon-192.png" };
-    if (reg) reg.showNotification("본촌점 일일보고 도착 · 클레임 1건", opt); else new Notification("본촌점 일일보고 도착", opt);
+    const opt = { body: t("데모: 실제 연결 후에는 보고가 올 때 이렇게 알려 드려요"), icon: "icons/icon-192.png" };
+    if (reg) reg.showNotification(t("{store} 일일보고 도착 · 클레임 {n}건", { store: "본촌점", n: 1 }), opt); else new Notification(t("{store} 일일보고 도착", { store: "본촌점" }), opt);
     LS.set("woo_demo_push", true);
   },
   pushEnabled() { return !!LS.get("woo_demo_push", false); },
@@ -157,10 +159,18 @@ const remote = {
     const c = await sb();
     const { data: { session } } = await c.auth.getSession();
     if (!session) return null;
-    const { data, error } = await c.from("profiles").select("role,store_id,display_name,job_title,can_settle,stores(name,kind,display_name,app_key)").eq("user_id", session.user.id).maybeSingle();
+    const cols = "role,store_id,display_name,job_title,can_settle,stores(name,kind,display_name,app_key)";
+    // lang(화면 언어) 열은 i18n.sql 을 실행한 뒤에만 있다. 아직 없으면 열 없이 다시 읽어서 앱이 멈추지 않게 한다
+    let { data, error } = await c.from("profiles").select("lang," + cols).eq("user_id", session.user.id).maybeSingle();
+    if (error && /lang/i.test(error.message ?? "")) ({ data, error } = await c.from("profiles").select(cols).eq("user_id", session.user.id).maybeSingle());
     if (error) throw error;
     if (!data) throw new Error("계정에 역할이 아직 연결되지 않았어요 (accounts.sql 실행 필요)");
-    return { role: data.role, job_title: String(data.job_title ?? "").trim(), can_settle: !!data.can_settle, store_id: data.store_id, store_name: data.stores?.name ?? "본촌점", store_kind: data.stores?.kind ?? "restaurant", store_app_key: data.stores?.app_key ?? null, store_display: data.stores?.display_name ?? data.stores?.name ?? "본촌점", display_name: data.display_name, user_id: session.user.id };
+    return { lang: data.lang ?? null, role: data.role, job_title: String(data.job_title ?? "").trim(), can_settle: !!data.can_settle, store_id: data.store_id, store_name: data.stores?.name ?? "본촌점", store_kind: data.stores?.kind ?? "restaurant", store_app_key: data.stores?.app_key ?? null, store_display: data.stores?.display_name ?? data.stores?.name ?? "본촌점", display_name: data.display_name, user_id: session.user.id };
+  },
+  // 내 화면 언어를 서버에 저장한다(i18n.sql 의 set_my_lang). 서버가 아직 준비 안 됐으면 오류 — 호출하는 쪽에서 이 기기에만 바꾼다
+  async setMyLang(l) {
+    const { error } = await (await sb()).rpc("set_my_lang", { p_lang: l });
+    if (error) throw error;
   },
   async signIn(email, password) {
     const c = await sb();
@@ -224,7 +234,9 @@ const remote = {
     if (typeof Notification === "undefined") miss.push("Notification");
     if (miss.length) {
       const standalone = matchMedia("(display-mode: standalone)").matches ? "설치앱" : "브라우저";
-      throw new Error(`푸시를 지원하지 않아요 [없는 기능: ${miss.join(", ")} / ${isSecureContext ? "https" : "비보안"} / ${standalone} / ${navigator.userAgent.slice(0, 90)}]`);
+      // 진단 정보는 콘솔로만(오류 문구는 번역할 수 있게 고정)
+      console.warn(`푸시를 지원하지 않아요 [없는 기능: ${miss.join(", ")} / ${isSecureContext ? "https" : "비보안"} / ${standalone} / ${navigator.userAgent.slice(0, 90)}]`);
+      throw new Error("푸시를 지원하지 않아요");
     }
     if (!VAPID_PUBLIC_KEY) throw new Error("VAPID 공개키가 config.js에 없어요");
     const perm = await Notification.requestPermission();

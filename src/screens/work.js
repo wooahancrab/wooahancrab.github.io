@@ -2,7 +2,7 @@
 // 본인 것은 본인만 수정하고, 전체 보기 권한이 없으면 내 기록만 보인다(서버 RLS가 정함 — work-archive.sql).
 import { api } from "../lib/api.js";
 import { h, toast, modal, confirmDialog, copyText } from "../lib/ui.js";
-import { todayKST, labelMD } from "../lib/kst.js";
+import { todayKST, labelMDKo as labelMD } from "../lib/kst.js";
 
 const TABS = [["log", "📝 일지"], ["ev", "📅 일정"], ["note", "🗂 기록함"]];
 const TABLE = { log: "work_logs", ev: "work_events", note: "work_notes" };

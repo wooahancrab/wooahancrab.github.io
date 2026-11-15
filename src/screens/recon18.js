@@ -2,7 +2,7 @@
 // 계산은 lib/recon18.js(순수 함수). 지금은 가상 10월 데이터로 화면을 확인하는 단계라, 입력한 자료는 이 화면을 열어 둔 동안만 보관한다.
 import { api } from "../lib/api.js";
 import { h, toast, modal, confirmDialog } from "../lib/ui.js";
-import { todayKST, addDays, labelMD, dow } from "../lib/kst.js";
+import { todayKST, addDays, labelMDKo as labelMD, dow } from "../lib/kst.js";
 import { METHODS, METHOD_LABEL, DEFAULT_DAYS, DEFAULT_TOL, STATUS_KEYS, buildDetail, statusLabel, canViewFinance, periodOf, analyze, fromBankDeposits, parseSalesRows, parseDepositRows, fmtMan, fmtPct, prevMonth, nextMonth, monthEnd, daysBetween, inferMethod } from "../lib/recon18.js";
 import { demoData } from "../lib/recon18-demo.js";
 

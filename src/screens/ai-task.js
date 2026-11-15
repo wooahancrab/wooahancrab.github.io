@@ -4,7 +4,7 @@
 // AI는 아무것도 저장하지 않는다. 저장은 항상 기존 업무지시(api.tkCreate)를 사람마다 한 번씩 부른다.
 import { api, isDemo } from "../lib/api.js";
 import { h, toast, confirmDialog, seg, bigToggle } from "../lib/ui.js";
-import { labelMD, dateOf, todayKST, parseDate, addDays } from "../lib/kst.js";
+import { labelMDKo as labelMD, dateOf, todayKST, parseDate, addDays } from "../lib/kst.js";
 
 const MAX_TEXT = 600;
 const MAX_ROWS = 40;

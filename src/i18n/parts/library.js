@@ -1,0 +1,83 @@
+// 번역 사전: 자료함 화면. 키 = 화면에 쓰는 한국어 문장 그대로, 값 = 번역. {이름} 자리 표시는 번역에도 똑같이 남긴다.
+// ※ 베트남어·영어는 초안이다. 베트남어를 읽을 수 있는 사람이 확인한 뒤 확정한다(회사 용어는 용어집이 우선).
+// 파일 이름·폴더 이름·설명은 사용자 데이터라 번역하지 않는다(사전에는 화면에 쓰는 고정 문구만 있다).
+export default {
+  vi: {
+    "📁 서식·자료함": "📁 Biểu mẫu & Tài liệu",
+    "⬆ 파일 올리기": "⬆ Tải tệp lên",
+    "파일을 열어 보거나 내려받을 수 있어요. 올리기는 관리자만 해요.": "Bạn có thể mở hoặc tải tệp về. Chỉ quản trị viên mới được tải lên.",
+    "검색 (이름·설명·폴더)": "Tìm kiếm (tên, mô tả, thư mục)",
+    "불러오기 실패: {err} (library.sql 실행 여부 확인)": "Không tải được: {err} (kiểm tra xem đã chạy library.sql chưa)",
+    "찾는 파일이 없어요": "Không tìm thấy tệp",
+    "아직 올린 파일이 없어요": "Chưa có tệp nào được tải lên",
+    // 공개 범위 표시
+    "전 직원": "Toàn bộ nhân viên",
+    "사업장": "Cơ sở",
+    "관리자": "Quản trị viên",
+    // 카드 버튼
+    "열기": "Mở",
+    "내려받기": "Tải về",
+    "파일을 지울까요?": "Xóa tệp này?",
+    "지우면 되돌릴 수 없어요": "Sau khi xóa sẽ không thể khôi phục",
+    "지웠어요": "Đã xóa",
+    // 올리기 창
+    "파일 올리기": "Tải tệp lên",
+    "올리기": "Tải lên",
+    "파일 (20MB까지)": "Tệp (tối đa 20MB)",
+    "이름": "Tên",
+    "폴더": "Thư mục",
+    "설명": "Mô tả",
+    "보는 사람": "Người xem",
+    "이름 (예: 연차 신청서)": "Tên (VD: Đơn xin nghỉ phép năm)",
+    "폴더 (예: 서식, 계약, 인사)": "Thư mục (VD: Biểu mẫu, Hợp đồng, Nhân sự)",
+    "설명 (선택)": "Mô tả (không bắt buộc)",
+    "전 직원이 볼 수 있어요": "Toàn bộ nhân viên đều xem được",
+    "선택한 사업장 직원만": "Chỉ nhân viên của cơ sở đã chọn",
+    "대표·부대표·정산 권한자만": "Chỉ Giám đốc, Phó giám đốc và người có quyền quyết toán",
+    "파일을 골라 주세요": "Vui lòng chọn tệp",
+    "이름과 폴더를 넣어 주세요": "Vui lòng nhập tên và thư mục",
+    "사업장을 골라 주세요": "Vui lòng chọn cơ sở",
+    "올리는 중…": "Đang tải lên…",
+    "올렸어요": "Đã tải lên",
+    // api 문구
+  },
+  en: {
+    "📁 서식·자료함": "📁 Forms & Documents",
+    "⬆ 파일 올리기": "⬆ Upload file",
+    "파일을 열어 보거나 내려받을 수 있어요. 올리기는 관리자만 해요.": "You can open or download files. Only admins can upload.",
+    "검색 (이름·설명·폴더)": "Search (name, description, folder)",
+    "불러오기 실패: {err} (library.sql 실행 여부 확인)": "Failed to load: {err} (check that library.sql has been run)",
+    "찾는 파일이 없어요": "No files found",
+    "아직 올린 파일이 없어요": "No files uploaded yet",
+    // 공개 범위 표시
+    "전 직원": "All staff",
+    "사업장": "Workplace",
+    "관리자": "Admin",
+    // 카드 버튼
+    "열기": "Open",
+    "내려받기": "Download",
+    "파일을 지울까요?": "Delete this file?",
+    "지우면 되돌릴 수 없어요": "This can't be undone",
+    "지웠어요": "Deleted",
+    // 올리기 창
+    "파일 올리기": "Upload file",
+    "올리기": "Upload",
+    "파일 (20MB까지)": "File (up to 20MB)",
+    "이름": "Name",
+    "폴더": "Folder",
+    "설명": "Description",
+    "보는 사람": "Visible to",
+    "이름 (예: 연차 신청서)": "Name (e.g. Annual leave request)",
+    "폴더 (예: 서식, 계약, 인사)": "Folder (e.g. Forms, Contracts, HR)",
+    "설명 (선택)": "Description (optional)",
+    "전 직원이 볼 수 있어요": "Visible to all staff",
+    "선택한 사업장 직원만": "Only staff at the selected workplace",
+    "대표·부대표·정산 권한자만": "CEO, Deputy CEO and settlement-authorized staff only",
+    "파일을 골라 주세요": "Please choose a file",
+    "이름과 폴더를 넣어 주세요": "Please enter a name and folder",
+    "사업장을 골라 주세요": "Please choose a workplace",
+    "올리는 중…": "Uploading…",
+    "올렸어요": "Uploaded",
+    // api 문구
+  },
+};

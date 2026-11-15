@@ -2,7 +2,7 @@
 import { api } from "../lib/api.js";
 import { getPosition } from "../lib/geo.js";
 import { h, toast, modal, timeInput, seg } from "../lib/ui.js";
-import { todayKST, addDays, dateOf, fmtHM, fmtDur, kstIso, minutesBetween, labelMD, monthKey, monthLabel, dow } from "../lib/kst.js";
+import { todayKST, addDays, dateOf, fmtHM, fmtDurKo as fmtDur, kstIso, minutesBetween, labelMDKo as labelMD, monthKey, monthLabelKo as monthLabel, dow } from "../lib/kst.js";
 import { recMinutes, recBadges } from "./attendance.js";
 
 const ROLE_KO = { manager: "매니저", staff: "직원" };
@@ -60,7 +60,7 @@ export async function renderAttendanceAdmin(root, onBack, opts = {}) {
       return h("div", { class: "empcard" },
         h("div", { class: "top2" }, h("b", null, e.display_name), h("span", { class: "muted" }, [e.job_title, ROLE_KO[e.role] ?? e.role].filter(Boolean).join(" · "))),
         state,
-        rec && recBadges(rec).length > 0 && h("div", { class: "badges", style: "justify-content:flex-start" }, recBadges(rec).map(([t, c]) => badge(t, c))),
+        rec && recBadges(rec, true).length > 0 && h("div", { class: "badges", style: "justify-content:flex-start" }, recBadges(rec, true).map(([t, c]) => badge(t, c))),
         h("span", { class: "muted" }, workText(e)));
     }), !emps.length && h("p", { class: "muted" }, "등록된 직원이 없어요. 👤 계정 관리에서 직원을 추가해 주세요."));
   }
@@ -105,7 +105,7 @@ export async function renderAttendanceAdmin(root, onBack, opts = {}) {
           open && h("div", { class: "list" }, mr.map((r) => h("div", { class: "item col static" },
             h("b", null, labelMD(r.work_date)),
             h("span", null, `${fmtHM(r.in_at)} ~ ${r.out_at ? fmtHM(r.out_at) : "퇴근 전"}` + (r.out_at ? ` (${fmtDur(recMinutes(r))})` : "")),
-            recBadges(r).length > 0 && h("span", { class: "badges" }, recBadges(r).map(([t, c]) => badge(t, c))),
+            recBadges(r, true).length > 0 && h("span", { class: "badges" }, recBadges(r, true).map(([t, c]) => badge(t, c))),
             h("button", { class: "linkbtn", onclick: () => editRecord(r) }, "수정"))),
           !mr.length && h("p", { class: "muted" }, "기록이 없어요")));
       })));

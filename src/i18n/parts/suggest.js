@@ -1,0 +1,73 @@
+// 번역 사전: 건의 화면. 키 = 화면에 쓰는 한국어 문장 그대로, 값 = 번역. {이름} 자리 표시는 번역에도 똑같이 남긴다.
+// ※ 베트남어·영어는 초안이다. 베트남어를 읽을 수 있는 사람이 확인한 뒤 확정한다(회사 용어는 용어집이 우선).
+// ※ "대표만 읽을 수 있어요" 계열 문구는 지금 실제(대표만 읽음)와 같게 번역했다. 읽는 사람이 바뀌면(6단계) 이 문구들을 함께 고친다.
+export default {
+  vi: {
+    "💌 건의함": "💌 Hộp góp ý",
+    "건의가 전달됐어요. 고마워요 🙏": "Góp ý của bạn đã được gửi. Cảm ơn bạn 🙏",
+    "대표만 읽을 수 있어요.": "Chỉ Giám đốc mới đọc được.",
+    "하나 더 쓰기": "Viết thêm một góp ý",
+    // 건의 종류(값은 그대로 저장되고 보이는 글자만 번역)
+    "업무 개선": "Cải thiện công việc",
+    "불편·고충": "Bất tiện, khó khăn",
+    "칭찬·감사": "Khen ngợi, cảm ơn",
+    "기타": "Khác",
+    "회사에 하고 싶은 말을 편하게 적어 주세요. 불편한 점, 개선 아이디어, 고마웠던 일 모두 좋아요.": "Hãy thoải mái viết điều bạn muốn nói với công ty. Điều bất tiện, ý tưởng cải thiện hay việc bạn thấy biết ơn đều được.",
+    "쓴 내용은 대표만 읽을 수 있어요. 다른 직원이나 관리자는 볼 수 없어요.": "Nội dung bạn viết chỉ Giám đốc mới đọc được. Nhân viên khác và quản lý đều không xem được.",
+    "이름을 숨기고 보내기": "Ẩn tên khi gửi",
+    "이름 숨김을 고르면 대표 화면에 이름이 보이지 않아요. (시스템 기록에는 남아요)": "Nếu chọn ẩn tên, tên của bạn sẽ không hiện trên màn hình của Giám đốc. (Vẫn được lưu trong hệ thống)",
+    "보내기": "Gửi",
+    "내용을 적어 주세요": "Vui lòng nhập nội dung",
+    // 대표 화면(받은 건의 읽기·처리)
+    "← 목록": "← Danh sách",
+    "불러오기 실패: {err} (suggestions.sql 실행 여부 확인)": "Không tải được: {err} (kiểm tra xem đã chạy suggestions.sql chưa)",
+    "새 건의 {n}": "Góp ý mới {n}",
+    "확인 {n}": "Đã đọc {n}",
+    "처리 {n}": "Đã xử lý {n}",
+    "전체": "Tất cả",
+    "해당하는 건의가 없어요": "Không có góp ý nào",
+    "이름 숨김": "Ẩn tên",
+    "(이름 없음)": "(Không có tên)",
+    "읽었어요": "Đã đọc",
+    "처리 완료": "Xử lý xong",
+    "새글로": "Chuyển về mới",
+    "삭제": "Xóa",
+    "이 건의를 지울까요?": "Xóa góp ý này?",
+    "지우기": "Xóa",
+    // 서버·api 문구
+  },
+  en: {
+    "💌 건의함": "💌 Suggestion box",
+    "건의가 전달됐어요. 고마워요 🙏": "Your suggestion has been sent. Thank you 🙏",
+    "대표만 읽을 수 있어요.": "Only the CEO can read it.",
+    "하나 더 쓰기": "Write another",
+    // 건의 종류(값은 그대로 저장되고 보이는 글자만 번역)
+    "업무 개선": "Work improvement",
+    "불편·고충": "Problems & concerns",
+    "칭찬·감사": "Praise & thanks",
+    "기타": "Other",
+    "회사에 하고 싶은 말을 편하게 적어 주세요. 불편한 점, 개선 아이디어, 고마웠던 일 모두 좋아요.": "Feel free to write whatever you'd like to tell the company: problems, ideas for improvement, or things you're grateful for.",
+    "쓴 내용은 대표만 읽을 수 있어요. 다른 직원이나 관리자는 볼 수 없어요.": "Only the CEO can read what you write. Other staff and managers cannot see it.",
+    "이름을 숨기고 보내기": "Hide my name when sending",
+    "이름 숨김을 고르면 대표 화면에 이름이 보이지 않아요. (시스템 기록에는 남아요)": "If you hide your name, it won't appear on the CEO's screen. (It is still kept in the system record.)",
+    "보내기": "Send",
+    "내용을 적어 주세요": "Please write something",
+    // 대표 화면(받은 건의 읽기·처리)
+    "← 목록": "← List",
+    "불러오기 실패: {err} (suggestions.sql 실행 여부 확인)": "Failed to load: {err} (check that suggestions.sql has been run)",
+    "새 건의 {n}": "New {n}",
+    "확인 {n}": "Read {n}",
+    "처리 {n}": "Handled {n}",
+    "전체": "All",
+    "해당하는 건의가 없어요": "No suggestions found",
+    "이름 숨김": "Name hidden",
+    "(이름 없음)": "(No name)",
+    "읽었어요": "Mark as read",
+    "처리 완료": "Mark as handled",
+    "새글로": "Mark as new",
+    "삭제": "Delete",
+    "이 건의를 지울까요?": "Delete this suggestion?",
+    "지우기": "Delete",
+    // 서버·api 문구
+  },
+};

@@ -52,6 +52,9 @@ p,li{text-wrap:pretty}
 .card.sub{border-left:4px solid var(--red);margin:10px 0}.card.sub h3{font-size:1rem;color:var(--ink)}
 .acc,.empcard,.scard{background:var(--card);border:1px solid var(--line);border-radius:var(--r-lg);padding:14px;display:flex;flex-direction:column;gap:6px;color:var(--ink)}
 .acc{gap:4px}.acc-btns{display:flex;gap:var(--s2)}.acc-btns .btn{margin:6px 0 0}
+/* 베트남어·영어는 글이 길어 좁은 폰에서 글자 중간이 꺾이므로 줄바꿈을 허용한다(한국어 화면은 그대로) */
+:root:not(:lang(ko)) .acc-btns{flex-wrap:wrap}:root:not(:lang(ko)) .acc-btns .btn{flex:1 1 104px;min-width:0}
+:root:not(:lang(ko)) .rt{flex-wrap:wrap}:root:not(:lang(ko)) .rt .rt-main{flex:1 1 150px}
 .scard{width:100%;text-align:left;cursor:pointer}.scard .srow{display:flex;gap:10px;align-items:baseline}.scard .srow span:first-child{min-width:84px;color:var(--muted)}
 .top2{display:flex;justify-content:space-between;align-items:center;gap:var(--s2)}
 .entry{display:flex;flex-direction:column;gap:var(--s2);background:var(--bg);border:1px solid var(--line);border-radius:var(--r-md);padding:10px}

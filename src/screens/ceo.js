@@ -1,7 +1,7 @@
 // 우아한F&B 본사(대표용) 총괄 앱: 3개 사업장의 오늘 현황을 한눈에 보고, 사업장을 눌러 관리·지시한다
 import { api } from "../lib/api.js";
 import { h, toast } from "../lib/ui.js";
-import { fmtHM, dateOf, labelMD } from "../lib/kst.js";
+import { fmtHM, dateOf, labelMDKo as labelMD } from "../lib/kst.js";
 import { renderOwner } from "./owner.js";
 import { renderSuggestAdmin } from "./suggest.js";
 import { renderTasksAdmin } from "./tasks-admin.js";

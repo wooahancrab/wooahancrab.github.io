@@ -1,4 +1,4 @@
-import { dow, labelMD } from "./kst.js";
+import { dow, labelMDKo as labelMD } from "./kst.js"; // 카톡으로 보내는 보고문은 화면 언어와 상관없이 한국어 요일
 
 export const STORE_NAME = "본촌점";
 

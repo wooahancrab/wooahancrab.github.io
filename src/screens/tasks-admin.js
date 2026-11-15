@@ -1,7 +1,7 @@
 // 업무지시 관리(대표·부대표): 업무를 지시하고, 담당자별 진행·밀림을 본다
 import { api } from "../lib/api.js";
 import { h, toast, modal, seg } from "../lib/ui.js";
-import { labelMD, dateOf, fmtHM, todayKST } from "../lib/kst.js";
+import { labelMDKo as labelMD, dateOf, fmtHM, todayKST } from "../lib/kst.js";
 import { REPEAT_KO } from "./tasks.js";
 
 const SHORT = { gejang: "게장", ck: "CK", fnb: "F&B" };

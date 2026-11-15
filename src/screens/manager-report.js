@@ -1,6 +1,6 @@
 import { api } from "../lib/api.js";
 import { h, toast, confirmDialog, copyText, seg, bigToggle, timeInput } from "../lib/ui.js";
-import { todayKST, labelMD, fmtHM } from "../lib/kst.js";
+import { todayKST, labelMDKo as labelMD, fmtHM } from "../lib/kst.js";
 import { normalize, validate, kakaoText, OPEN_ITEMS, TRASH, STORE_NAME, blankAbsent, blankLate, blankClaim } from "../lib/report.js";
 
 export async function renderManager(root, ctx) {

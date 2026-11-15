@@ -1,0 +1,71 @@
+// 번역 사전: 업무(내 업무) 화면. 키 = 화면에 쓰는 한국어 문장 그대로, 값 = 번역. {이름} 자리 표시는 번역에도 똑같이 남긴다.
+// ※ 베트남어·영어는 초안이다. 베트남어를 읽을 수 있는 사람이 확인한 뒤 확정한다(회사 용어는 용어집이 우선).
+// 서버 함수(tasks)가 돌려주는 오류 문구와 api.js 가 돌려주는 연결 오류 문구도 이 화면이 t(e.message)로 보여 주므로 함께 넣는다.
+export default {
+  vi: {
+    // 화면
+    "한 줄 메모 (선택) 예: 송장 32건 발행 완료": "Ghi chú ngắn (không bắt buộc). VD: đã xuất 32 vận đơn",
+    "완료 보고": "Báo cáo hoàn thành",
+    "완료했어요": "Đã hoàn thành",
+    "완료로 보고했어요": "Đã báo cáo hoàn thành",
+    "완료": "Hoàn thành",
+    "마감 없음": "Không có hạn chót",
+    "⚠ 밀림 · {d}": "⚠ Trễ hạn · {d}",
+    "오늘 마감": "Hạn chót hôm nay",
+    "마감 {d}": "Hạn chót {d}",
+    "{due} · 지시 {name}": "{due} · Giao bởi {name}",
+    "{due} · {repeat} 반복 · 지시 {name}": "{due} · Lặp lại: {repeat} · Giao bởi {name}",
+    "매일": "Hằng ngày",
+    "매주": "Hằng tuần",
+    "매달": "Hằng tháng",
+    "불러오기 실패: {e}": "Không tải được: {e}",
+    "남은 업무 {n}건": "Còn {n} công việc",
+    "지시받은 업무가 없어요 👍": "Bạn chưa được giao công việc nào 👍",
+    "밀린 업무": "Công việc trễ hạn",
+    "예정": "Sắp tới",
+    "최근 완료 (7일)": "Hoàn thành gần đây (7 ngày)",
+    // 서버 함수(tasks) 오류 문구
+    "업무를 찾지 못했어요": "Không tìm thấy công việc",
+    "내 업무가 아니에요": "Đây không phải công việc của bạn",
+    "이미 처리된 업무예요": "Công việc này đã được xử lý",
+    "업무 내용을 입력해 주세요": "Vui lòng nhập nội dung công việc",
+    "담당자를 골라 주세요": "Vui lòng chọn người phụ trách",
+    "내 담당 직원이 아니면 지시할 수 없어요": "Chỉ có thể giao việc cho nhân viên do bạn phụ trách",
+    "반복 업무는 첫 마감일이 필요해요": "Công việc lặp lại cần có hạn chót đầu tiên",
+    "내가 지시한 업무가 아니에요": "Đây không phải công việc do bạn giao",
+    // api.js 연결 오류 문구
+  },
+  en: {
+    // 화면
+    "한 줄 메모 (선택) 예: 송장 32건 발행 완료": "One-line note (optional), e.g. 32 waybills issued",
+    "완료 보고": "Completion report",
+    "완료했어요": "Done",
+    "완료로 보고했어요": "Reported as done",
+    "완료": "Done",
+    "마감 없음": "No due date",
+    "⚠ 밀림 · {d}": "⚠ Overdue · {d}",
+    "오늘 마감": "Due today",
+    "마감 {d}": "Due {d}",
+    "{due} · 지시 {name}": "{due} · Assigned by {name}",
+    "{due} · {repeat} 반복 · 지시 {name}": "{due} · Repeat: {repeat} · Assigned by {name}",
+    "매일": "Daily",
+    "매주": "Weekly",
+    "매달": "Monthly",
+    "불러오기 실패: {e}": "Failed to load: {e}",
+    "남은 업무 {n}건": "Tasks left: {n}",
+    "지시받은 업무가 없어요 👍": "No tasks assigned to you 👍",
+    "밀린 업무": "Overdue tasks",
+    "예정": "Upcoming",
+    "최근 완료 (7일)": "Recently done (7 days)",
+    // 서버 함수(tasks) 오류 문구
+    "업무를 찾지 못했어요": "Task not found",
+    "내 업무가 아니에요": "This isn't your task",
+    "이미 처리된 업무예요": "This task was already handled",
+    "업무 내용을 입력해 주세요": "Please enter the task details",
+    "담당자를 골라 주세요": "Please choose an assignee",
+    "내 담당 직원이 아니면 지시할 수 없어요": "You can only assign tasks to staff under you",
+    "반복 업무는 첫 마감일이 필요해요": "Repeating tasks need a first due date",
+    "내가 지시한 업무가 아니에요": "You didn't assign this task",
+    // api.js 연결 오류 문구
+  },
+};

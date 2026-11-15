@@ -6,7 +6,7 @@
 //   pre    = 분석 시작 전 자료 건수 { sales, deposits } — 넘기면 '미수금 계산에만 썼어요' 안내 한 줄을 넣는다(모르면 생략).
 // 계산은 lib/recon18.js(analyze, buildDetail, fmtMan …)가 하고, 이 파일은 그 결과를 종이 모양으로 그리기만 한다. 금액은 만원 단위(fmtMan).
 import { h, toast } from "../lib/ui.js";
-import { labelMD, addDays } from "../lib/kst.js";
+import { labelMDKo as labelMD, addDays } from "../lib/kst.js";
 import { METHOD_LABEL, DEFAULT_TOL, STATUS_KEYS, canViewFinance, buildDetail, statusLabel, fmtMan, fmtPct, nextMonth } from "../lib/recon18.js";
 
 const ROLE_KO = { owner: "대표", deputy: "부대표", chairman: "회장" };

@@ -1,7 +1,7 @@
 // CK 점검 관리: 오늘 현황·이상 보고(관리자) + 항목·기준값 설정(대표)
 import { api } from "../lib/api.js";
 import { h, toast, modal, seg } from "../lib/ui.js";
-import { labelMD, fmtHM, dateOf } from "../lib/kst.js";
+import { labelMDKo as labelMD, fmtHM, dateOf } from "../lib/kst.js";
 import { rangeText } from "./checklist.js";
 
 const ROLE_KO = { staff: "직원", supervisor: "중간관리자", manager: "매니저" };

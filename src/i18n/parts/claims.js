@@ -1,0 +1,91 @@
+// 번역 사전: 클레임 화면. 키 = 화면에 쓰는 한국어 문장 그대로, 값 = 번역. {이름} 자리 표시는 번역에도 똑같이 남긴다.
+// ※ 베트남어·영어는 초안이다. 베트남어를 읽을 수 있는 사람이 확인한 뒤 확정한다(회사 용어는 용어집이 우선).
+// 아래쪽 '서버 함수 문구'는 supabase/functions/claims/index.ts 가 돌려주는 한국어 오류·경과 기록이다(화면에서 t()로 감싸 보여 준다).
+export default {
+  vi: {
+    // 상태·구분
+    "접수": "Đã tiếp nhận",
+    "처리 중": "Đang xử lý",
+    "해결": "Đã giải quyết",
+    "일반": "Thông thường",
+    "중대": "Nghiêm trọng",
+    "🚨 중대": "🚨 Nghiêm trọng",
+    "진행 중": "Đang xử lý",
+    "해결됨": "Đã giải quyết",
+    // 목록 화면
+    "＋ 클레임 등록": "＋ Ghi nhận khiếu nại của khách",
+    "처리할 클레임이 없어요 👍": "Không có khiếu nại của khách nào cần xử lý 👍",
+    "해결된 클레임이 아직 없어요": "Chưa có khiếu nại của khách nào được giải quyết",
+    "{name} 해결 · {when}": "{name} đã giải quyết · {when}",
+    "경과 메모": "Ghi chú tiến độ",
+    "처리 시작": "Bắt đầu xử lý",
+    "해결 완료": "Giải quyết xong",
+    // 등록 창
+    "클레임 등록": "Ghi nhận khiếu nại của khách",
+    "어떤 클레임인지 (예: 국이 식어서 나왔다는 말씀)": "Khiếu nại về việc gì (VD: khách nói canh được mang ra bị nguội)",
+    "중대: 대표·매니저에게 바로 알림이 가요 (위생·이물질·안전·큰 항의)": "Nghiêm trọng: Giám đốc và Quản lý sẽ nhận thông báo ngay (vệ sinh, dị vật, an toàn, khiếu nại lớn)",
+    "일반: 목록에 기록되고, 하루 넘게 안 풀리면 대표에게 알려요": "Thông thường: được ghi vào danh sách; nếu quá một ngày vẫn chưa giải quyết sẽ báo cho Giám đốc",
+    "등록": "Ghi nhận",
+    "내용을 입력해 주세요": "Vui lòng nhập nội dung",
+    "등록했어요": "Đã ghi nhận",
+    // 경과 메모·해결 처리 창
+    "진행 상황 (예: 손님께 전화드림)": "Tiến độ (VD: đã gọi điện cho khách)",
+    "저장": "Lưu",
+    "저장했어요": "Đã lưu",
+    "해결 처리": "Đánh dấu đã giải quyết",
+    "어떻게 해결했는지 한 줄 (예: 사과 후 음식값 환불)": "Một dòng về cách đã giải quyết (VD: xin lỗi và hoàn tiền món ăn)",
+    "바꿨어요": "Đã thay đổi",
+    // 서버 함수 문구(claims)
+    "매장 정보를 찾지 못했어요": "Không tìm thấy thông tin cửa hàng",
+    "클레임 내용을 입력해 주세요": "Vui lòng nhập nội dung khiếu nại của khách",
+    "등록하지 못했어요. 다시 시도해 주세요": "Không ghi nhận được. Vui lòng thử lại",
+    "매니저·대표만 처리 상태를 바꿀 수 있어요": "Chỉ Quản lý và Giám đốc mới đổi được trạng thái xử lý",
+    "클레임을 찾지 못했어요": "Không tìm thấy khiếu nại của khách",
+    "상태가 올바르지 않아요": "Trạng thái không hợp lệ",
+    "해결 내용을 한 줄 적어 주세요": "Vui lòng ghi một dòng về cách đã giải quyết",
+    "접수로 되돌림": "Chuyển lại thành Đã tiếp nhận",
+  },
+  en: {
+    // 상태·구분
+    "접수": "Received",
+    "처리 중": "In progress",
+    "해결": "Resolved",
+    "일반": "Normal",
+    "중대": "Serious",
+    "🚨 중대": "🚨 Serious",
+    "진행 중": "Open",
+    "해결됨": "Resolved",
+    // 목록 화면
+    "＋ 클레임 등록": "＋ Log a customer complaint",
+    "처리할 클레임이 없어요 👍": "No customer complaints to handle 👍",
+    "해결된 클레임이 아직 없어요": "No resolved customer complaints yet",
+    "{name} 해결 · {when}": "Resolved by {name} · {when}",
+    "경과 메모": "Progress note",
+    "처리 시작": "Start handling",
+    "해결 완료": "Mark resolved",
+    // 등록 창
+    "클레임 등록": "Log a customer complaint",
+    "어떤 클레임인지 (예: 국이 식어서 나왔다는 말씀)": "What the complaint is about (e.g. the customer said the soup came out cold)",
+    "중대: 대표·매니저에게 바로 알림이 가요 (위생·이물질·안전·큰 항의)": "Serious: the CEO and Managers are notified right away (hygiene, foreign objects, safety, major complaints)",
+    "일반: 목록에 기록되고, 하루 넘게 안 풀리면 대표에게 알려요": "Normal: recorded in the list; the CEO is told if it stays unresolved for more than a day",
+    "등록": "Submit",
+    "내용을 입력해 주세요": "Please enter the details",
+    "등록했어요": "Submitted",
+    // 경과 메모·해결 처리 창
+    "진행 상황 (예: 손님께 전화드림)": "Progress (e.g. called the customer)",
+    "저장": "Save",
+    "저장했어요": "Saved",
+    "해결 처리": "Mark as resolved",
+    "어떻게 해결했는지 한 줄 (예: 사과 후 음식값 환불)": "One line on how it was resolved (e.g. apologized and refunded the meal)",
+    "바꿨어요": "Updated",
+    // 서버 함수 문구(claims)
+    "매장 정보를 찾지 못했어요": "Couldn't find the store information",
+    "클레임 내용을 입력해 주세요": "Please enter the complaint details",
+    "등록하지 못했어요. 다시 시도해 주세요": "Couldn't submit it. Please try again",
+    "매니저·대표만 처리 상태를 바꿀 수 있어요": "Only Managers and the CEO can change the handling status",
+    "클레임을 찾지 못했어요": "Couldn't find the complaint",
+    "상태가 올바르지 않아요": "The status isn't valid",
+    "해결 내용을 한 줄 적어 주세요": "Please write one line on how it was resolved",
+    "접수로 되돌림": "Moved back to Received",
+  },
+};

@@ -3,7 +3,7 @@
 // 사용자가 쓴 글자(이름·설명·파일 이름 등)는 모두 h() 로 글자로만 넣는다(innerHTML 안 씀).
 import { api } from "../lib/api.js";
 import { h, toast, modal, confirmDialog } from "../lib/ui.js";
-import { dateOf, labelMD } from "../lib/kst.js";
+import { dateOf, labelMDKo as labelMD } from "../lib/kst.js";
 
 const NOTICE = "대표·부대표는 모든 프로젝트를 볼 수 있어요. 고객 개인정보·급여·통장 자료는 올리지 마세요";
 const MEMBERS_NOTE = "대표·부대표는 명단에 없어도 모든 프로젝트를 볼 수 있어요";

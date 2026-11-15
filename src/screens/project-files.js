@@ -2,7 +2,7 @@
 // 파일 이름·올린 사람 이름은 모두 글자로만 화면에 넣는다(innerHTML 안 씀). ctx 는 project-feed.js 와 같다.
 // ctx.goPost(postId) 가 있을 때만 '글로 이동' 단추를 보인다(없으면 단추를 숨김).
 import { h, toast, confirmDialog } from "../lib/ui.js";
-import { dateOf, labelMD, todayKST } from "../lib/kst.js";
+import { dateOf, labelMDKo as labelMD, todayKST } from "../lib/kst.js";
 import { ALLOWED_EXT, checkFile, ensureImgStyles, openLightbox } from "../lib/img.js";
 
 const PAGE = 30;

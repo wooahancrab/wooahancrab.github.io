@@ -3,8 +3,9 @@
 import { api } from "../lib/api.js";
 import { h, toast, modal, confirmDialog } from "../lib/ui.js";
 import { dateOf, labelMD } from "../lib/kst.js";
+import { t } from "../lib/i18n.js";
 
-const AUD = { all: "전 직원", store: "사업장", admin: "관리자" };
+const AUD = { all: "전 직원", store: "사업장", admin: "관리자" }; // 보일 때 t(AUD[...])로 감싼다
 const kb = (n) => (n >= 1048576 ? (n / 1048576).toFixed(1) + "MB" : Math.max(1, Math.round(n / 1024)) + "KB");
 const iconOf = (f) => {
   const n = (f.file_name || "").toLowerCase();
@@ -29,39 +30,39 @@ export async function renderLibrary(root, opts = {}) {
     try {
       const url = await api.libUrl(f, download);
       if (download) { const a = h("a", { href: url, download: f.file_name || "" }); document.body.append(a); a.click(); a.remove(); } else if (w) w.location = url; else location.href = url;
-    } catch (e) { w?.close(); toast(e.message, 5000); }
+    } catch (e) { w?.close(); toast(t(e.message), 5000); }
   }
   async function remove(f) {
-    if (!(await confirmDialog("파일을 지울까요?", [f.title, "지우면 되돌릴 수 없어요"], "취소", "지우기"))) return;
-    try { await api.libDelete(f); toast("지웠어요", 1800); await load(); } catch (e) { toast(e.message, 5000); }
+    if (!(await confirmDialog(t("파일을 지울까요?"), [f.title, t("지우면 되돌릴 수 없어요")], t("취소"), t("지우기")))) return;
+    try { await api.libDelete(f); toast(t("지웠어요"), 1800); await load(); } catch (e) { toast(t(e.message), 5000); }
   }
 
   async function upload() {
     if (top && !stores.length) stores = await api.listStores().catch(() => []);
     const file = h("input", { type: "file", class: "inp" });
-    const title = h("input", { class: "inp", placeholder: "이름 (예: 연차 신청서)", maxlength: "60" });
-    const folderIn = h("input", { class: "inp", placeholder: "폴더 (예: 서식, 계약, 인사)", maxlength: "20", list: "lib-folders" });
+    const title = h("input", { class: "inp", placeholder: t("이름 (예: 연차 신청서)"), maxlength: "60" });
+    const folderIn = h("input", { class: "inp", placeholder: t("폴더 (예: 서식, 계약, 인사)"), maxlength: "20", list: "lib-folders" });
     const dl = h("datalist", { id: "lib-folders" }, [...new Set(files.map((f) => f.folder))].map((x) => h("option", { value: x })));
-    folderIn.value = folder !== "all" ? folder : "서식";
-    const note = h("input", { class: "inp", placeholder: "설명 (선택)", maxlength: "100" });
-    const aud = h("select", { class: "inp" }, [["all", "전 직원이 볼 수 있어요"], ["store", "선택한 사업장 직원만"], ["admin", "대표·부대표·정산 권한자만"]].map(([v, l]) => h("option", { value: v }, l)));
+    folderIn.value = folder !== "all" ? folder : "서식"; // 폴더 이름은 사용자 데이터(저장되는 값)라 번역하지 않는다
+    const note = h("input", { class: "inp", placeholder: t("설명 (선택)"), maxlength: "100" });
+    const aud = h("select", { class: "inp" }, [["all", "전 직원이 볼 수 있어요"], ["store", "선택한 사업장 직원만"], ["admin", "대표·부대표·정산 권한자만"]].map(([v, l]) => h("option", { value: v }, t(l))));
     const st = h("select", { class: "inp" }, stores.map((s) => h("option", { value: s.id }, s.display_name ?? s.name)));
     const stRow = h("div", { style: "display:none" }, st);
     aud.onchange = () => { stRow.style.display = aud.value === "store" && top ? "" : "none"; };
     file.onchange = () => { if (!title.value && file.files[0]) title.value = file.files[0].name.replace(/\.[^.]+$/, ""); };
-    const lbl = (t) => h("span", { class: "lbl" }, t);
+    const lbl = (s) => h("span", { class: "lbl" }, t(s));
     for (;;) {
-      if (!(await modal("파일 올리기", h("div", { class: "stack" }, lbl("파일 (20MB까지)"), file, lbl("이름"), title, lbl("폴더"), folderIn, dl, lbl("설명"), note, lbl("보는 사람"), aud, stRow), "올리기", "취소"))) return;
+      if (!(await modal(t("파일 올리기"), h("div", { class: "stack" }, lbl("파일 (20MB까지)"), file, lbl("이름"), title, lbl("폴더"), folderIn, dl, lbl("설명"), note, lbl("보는 사람"), aud, stRow), t("올리기"), t("취소")))) return;
       const f = file.files[0];
-      if (!f) { toast("파일을 골라 주세요"); continue; }
-      if (!title.value.trim() || !folderIn.value.trim()) { toast("이름과 폴더를 넣어 주세요"); continue; }
+      if (!f) { toast(t("파일을 골라 주세요")); continue; }
+      if (!title.value.trim() || !folderIn.value.trim()) { toast(t("이름과 폴더를 넣어 주세요")); continue; }
       const store_id = aud.value === "store" ? (top ? st.value : prof.store_id) : null;
-      if (aud.value === "store" && !store_id) { toast("사업장을 골라 주세요"); continue; }
-      toast("올리는 중…", 20000);
+      if (aud.value === "store" && !store_id) { toast(t("사업장을 골라 주세요")); continue; }
+      toast(t("올리는 중…"), 20000);
       try {
         await api.libUpload(f, { title: title.value.trim(), folder: folderIn.value.trim(), note: note.value.trim(), audience: aud.value, store_id });
-        toast("올렸어요", 2000); await load(); return;
-      } catch (e) { toast(e.message, 6000); }
+        toast(t("올렸어요"), 2000); await load(); return;
+      } catch (e) { toast(t(e.message), 6000); }
     }
   }
 
@@ -70,28 +71,28 @@ export async function renderLibrary(root, opts = {}) {
     const folders = [...new Set(files.map((f) => f.folder))].sort();
     const key = q.trim().toLowerCase();
     const list = files.filter((f) => (folder === "all" || f.folder === folder) && (!key || [f.title, f.file_name, f.note, f.folder, f.uploaded_name].join(" ").toLowerCase().includes(key)));
-    const search = h("input", { class: "inp", type: "search", placeholder: "검색 (이름·설명·폴더)", value: q });
+    const search = h("input", { class: "inp", type: "search", placeholder: t("검색 (이름·설명·폴더)"), value: q });
     search.oninput = () => { q = search.value; const pos = search.selectionStart; draw(); const s = root.querySelector('input[type="search"]'); s?.focus(); s?.setSelectionRange(pos, pos); };
     root.replaceChildren(h("div", { class: "page" },
-      opts.onBack && h("button", { class: "linkbtn back", onclick: opts.onBack }, "← 목록"),
-      h("h1", null, "📁 서식·자료함"),
-      canUpload && h("button", { class: "btn primary", onclick: upload }, "⬆ 파일 올리기"),
-      !canUpload && h("p", { class: "muted" }, "파일을 열어 보거나 내려받을 수 있어요. 올리기는 관리자만 해요."),
-      h("div", { class: "chips-bar", style: "margin:8px 0" }, [["all", "전체"], ...folders.map((x) => [x, x])].map(([k, l]) =>
+      opts.onBack && h("button", { class: "linkbtn back", onclick: opts.onBack }, t("← 목록")),
+      h("h1", null, t("📁 서식·자료함")),
+      canUpload && h("button", { class: "btn primary", onclick: upload }, t("⬆ 파일 올리기")),
+      !canUpload && h("p", { class: "muted" }, t("파일을 열어 보거나 내려받을 수 있어요. 올리기는 관리자만 해요.")),
+      h("div", { class: "chips-bar", style: "margin:8px 0" }, [["all", t("전체")], ...folders.map((x) => [x, x])].map(([k, l]) =>
         h("button", { class: "chip" + (folder === k ? " on" : ""), onclick: () => { folder = k; draw(); } }, l))),
       search,
-      loading ? h("p", { class: "muted" }, "불러오는 중…")
-        : err ? h("p", { class: "err" }, "불러오기 실패: " + err + " (library.sql 실행 여부 확인)")
-        : !list.length ? h("p", { class: "muted" }, files.length ? "찾는 파일이 없어요" : "아직 올린 파일이 없어요")
+      loading ? h("p", { class: "muted" }, t("불러오는 중…"))
+        : err ? h("p", { class: "err" }, t("불러오기 실패: {err} (library.sql 실행 여부 확인)", { err: t(err) }))
+        : !list.length ? h("p", { class: "muted" }, files.length ? t("찾는 파일이 없어요") : t("아직 올린 파일이 없어요"))
         : list.map((f) => h("div", { class: "card" },
           h("div", { style: "display:flex;justify-content:space-between;gap:8px" }, h("b", null, `${iconOf(f)} ${f.title}`),
-            h("span", { class: "badge info" }, f.audience === "store" ? (f.stores?.display_name ?? f.stores?.name ?? AUD.store) : AUD[f.audience])),
+            h("span", { class: "badge info" }, f.audience === "store" ? (f.stores?.display_name ?? f.stores?.name ?? t(AUD.store)) : t(AUD[f.audience]))),
           h("div", { class: "muted" }, `${f.folder} · ${kb(f.size)} · ${f.uploaded_name} · ${labelMD(dateOf(f.created_at))}`),
           f.note && h("div", null, f.note),
           h("div", { class: "toprow", style: "border-top:1px solid var(--line);padding-top:var(--s3)" },
-            h("button", { class: "btn ghost slim", onclick: () => open(f) }, "열기"),
-            h("button", { class: "btn ghost slim", onclick: () => open(f, true) }, "내려받기"),
-            (f.uploaded_by === prof.user_id || prof.role === "owner") && h("button", { class: "linkbtn bad-text", style: "grid-column:1/-1", onclick: () => remove(f) }, "삭제"))))));
+            h("button", { class: "btn ghost slim", onclick: () => open(f) }, t("열기")),
+            h("button", { class: "btn ghost slim", onclick: () => open(f, true) }, t("내려받기")),
+            (f.uploaded_by === prof.user_id || prof.role === "owner") && h("button", { class: "linkbtn bad-text", style: "grid-column:1/-1", onclick: () => remove(f) }, t("삭제")))))));
     scrollTo(0, y);
   }
   draw();

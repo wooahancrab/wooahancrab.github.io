@@ -1,6 +1,6 @@
 import { api, isDemo } from "../lib/api.js";
 import { h, toast, copyText, seg, confirmDialog, promptPassword, passwordField, modal } from "../lib/ui.js";
-import { todayKST, addDays, labelMD, monthKey, monthLabel } from "../lib/kst.js";
+import { todayKST, addDays, labelMDKo as labelMD, monthKey, monthLabelKo as monthLabel } from "../lib/kst.js";
 import { renderAttendanceAdmin } from "./attendance-admin.js";
 import { renderClaims } from "./claims.js";
 import { renderChecklistAdmin } from "./checklist-admin.js";
@@ -170,11 +170,19 @@ export async function renderOwner(root, ctx, opts = {}) {
     // 정산 자료 올리기 권한: 통장·정산 엑셀을 올리는 수금 대조 탭을 쓸 수 있다 (경리·사무 담당)
     const settleChk = h("input", { type: "checkbox" }); settleChk.checked = !!u.can_settle;
     const settleBox = h("label", { class: "lbl", style: "display:flex;gap:8px;align-items:center" }, settleChk, "정산 자료 올리기 권한 (통장·정산 엑셀, 수금 대조)");
-    const content = h("div", { class: "stack" }, h("p", { class: "muted" }, u.email), name, title, u.role !== "owner" && roleBox, u.role !== "owner" && u.role !== "deputy" && assignBox, u.role !== "owner" && u.role !== "deputy" && settleBox);
+    // 화면 언어 기본값: 베트남 직원은 베트남어로(직원 본인도 앱 위쪽 🌐 에서 바꿀 수 있다)
+    let langPick = u.lang ?? null; // null = 아직 안 정함(그 사람 폰의 언어로 보임)
+    const langBox = h("div", { class: "stack" });
+    const renderLang = () => langBox.replaceChildren(
+      h("label", { class: "lbl" }, "화면 언어 (이 사람이 앱을 보는 언어)" + (langPick ? "" : " — 아직 안 정함: 폰 언어대로 보여요")),
+      seg([["ko", "한국어"], ["vi", "Tiếng Việt"], ["en", "English"]], langPick, (v) => { langPick = v; renderLang(); }));
+    renderLang();
+    const content = h("div", { class: "stack" }, h("p", { class: "muted" }, u.email), name, title, langBox, u.role !== "owner" && roleBox, u.role !== "owner" && u.role !== "deputy" && assignBox, u.role !== "owner" && u.role !== "deputy" && settleBox);
     for (;;) {
       if (!(await modal("이름·직책·역할 수정", content, "저장", "취소"))) return;
       if (!name.value.trim()) { toast("이름을 입력해 주세요"); continue; }
       const body = { action: "update_profile", user_id: u.id, display_name: name.value, job_title: title.value };
+      if (langPick && langPick !== u.lang) body.lang = langPick;
       if (u.role !== "owner" && role !== u.role) body.role = role;
       if (u.role !== "owner" && u.role !== "deputy") { body.can_settle = settleChk.checked; body.supervisor_id = supSel.value; body.after_hours_id = afterSel.value; body.managed_until = untilInp.value; }
       if (await userAction(body, role !== u.role ? "역할을 바꿨어요. 다시 로그인하면 적용돼요" : "저장했어요")) return;

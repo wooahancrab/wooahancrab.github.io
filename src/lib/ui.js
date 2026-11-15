@@ -1,3 +1,8 @@
+import { t, lang } from "./i18n.js";
+
+// 문자열만 화면 언어로 바꾼다(사전에 없으면 그대로). 이미 번역된 문장·요소(노드)를 넘겨도 안전하다
+const tr = (s) => (typeof s === "string" ? t(s) : s);
+
 export function h(tag, props, ...kids) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(props || {})) {
@@ -14,10 +19,16 @@ export function h(tag, props, ...kids) {
   return el;
 }
 
+// msg 는 t(msg) 로 자동 번역된다(이미 번역된 문장도 사전에 없으면 그대로 나온다)
 export function toast(msg, ms = 2600) {
-  const t = h("div", { class: "toast", role: "status" }, msg);
-  document.body.append(t);
-  setTimeout(() => t.remove(), ms);
+  // DB·네트워크가 던지는 영어 원문(예: Failed to fetch, JWT expired)은 번역할 수 없어서, 한국어가 아닌 화면에서는 알아볼 수 있는 문장으로 바꾼다
+  if (typeof msg === "string" && lang() !== "ko" && !/[가-힣]/.test(msg)) {
+    if (/failed to fetch|networkerror|load failed|network request failed/i.test(msg)) msg = "서버에 연결하지 못했어요";
+    else if (/jwt|row-level security|violates|does not exist|permission denied|schema cache/i.test(msg)) msg = "처리하지 못했어요";
+  }
+  const el = h("div", { class: "toast", role: "status" }, tr(msg));
+  document.body.append(el);
+  setTimeout(() => el.remove(), ms);
 }
 
 // 제출 전 빈칸 안내. true = 그대로 제출, false = 돌아가서 채우기
@@ -26,24 +37,25 @@ export function confirmDialog(title, items, backLabel, goLabel) {
     const close = (v) => { ov.remove(); resolve(v); };
     const ov = h("div", { class: "overlay" },
       h("div", { class: "dialog", role: "dialog", "aria-modal": "true" },
-        h("h2", null, title),
-        h("ul", null, items.map((i) => h("li", null, i))),
-        h("button", { class: "btn primary", onclick: () => close(false) }, backLabel),
-        h("button", { class: "btn ghost", onclick: () => close(true) }, goLabel)));
+        h("h2", null, tr(title)),
+        h("ul", null, items.map((i) => h("li", null, tr(i)))),
+        h("button", { class: "btn primary", onclick: () => close(false) }, tr(backLabel)),
+        h("button", { class: "btn ghost", onclick: () => close(true) }, tr(goLabel))));
     document.body.append(ov);
   });
 }
 
 // 비밀번호 입력칸: 오른쪽 '보기' 버튼을 누르면 글자가 보이고, 다시 누르면 숨겨진다. .input 으로 실제 input에 접근.
 export function passwordField(placeholder, { autocomplete = "current-password", value = "", oninput } = {}) {
-  const inp = h("input", { type: "password", class: "inp pw-inp", placeholder, autocomplete, "aria-label": placeholder });
+  const ph = tr(placeholder);
+  const inp = h("input", { type: "password", class: "inp pw-inp", placeholder: ph, autocomplete, "aria-label": ph });
   inp.value = value;
   if (oninput) inp.addEventListener("input", () => oninput(inp.value));
-  const eye = h("button", { type: "button", class: "pw-eye", "aria-label": "비밀번호 보기/숨기기", onclick: () => {
+  const eye = h("button", { type: "button", class: "pw-eye", "aria-label": t("비밀번호 보기/숨기기"), onclick: () => {
     const show = inp.type === "password";
     inp.type = show ? "text" : "password";
-    eye.textContent = show ? "숨김" : "보기";
-  } }, "보기");
+    eye.textContent = show ? t("숨김") : t("보기");
+  } }, t("보기"));
   return Object.assign(h("div", { class: "pwbox" }, inp, eye), { input: inp });
 }
 
@@ -51,23 +63,23 @@ export function passwordField(placeholder, { autocomplete = "current-password", 
 export function promptPassword(title) {
   return new Promise((resolve) => {
     const close = (v) => { ov.remove(); resolve(v); };
-    const p1 = passwordField("새 비밀번호 (8자 이상)", { autocomplete: "new-password" });
-    const p2 = passwordField("새 비밀번호 한 번 더", { autocomplete: "new-password" });
+    const p1 = passwordField(t("새 비밀번호 (8자 이상)"), { autocomplete: "new-password" });
+    const p2 = passwordField(t("새 비밀번호 한 번 더"), { autocomplete: "new-password" });
     const hint = h("p", { class: "hint" }, "");
     const check = () => {
-      hint.textContent = !p2.input.value ? "" : p1.input.value === p2.input.value ? "✓ 서로 같아요" : "✕ 서로 달라요";
+      hint.textContent = !p2.input.value ? "" : p1.input.value === p2.input.value ? t("✓ 서로 같아요") : t("✕ 서로 달라요");
       hint.className = "hint " + (p1.input.value === p2.input.value ? "ok-text" : "err");
     };
     p1.input.addEventListener("input", check); p2.input.addEventListener("input", check);
     const ov = h("div", { class: "overlay" },
       h("div", { class: "dialog", role: "dialog", "aria-modal": "true" },
-        h("h2", null, title), p1, p2, hint,
+        h("h2", null, tr(title)), p1, p2, hint,
         h("button", { class: "btn primary", onclick: () => {
-          if (p1.input.value.length < 8) { toast("8자 이상 입력해 주세요"); return; }
-          if (p1.input.value !== p2.input.value) { toast("두 비밀번호가 서로 달라요"); return; }
+          if (p1.input.value.length < 8) { toast(t("8자 이상 입력해 주세요")); return; }
+          if (p1.input.value !== p2.input.value) { toast(t("두 비밀번호가 서로 달라요")); return; }
           close(p1.input.value);
-        } }, "변경"),
-        h("button", { class: "btn ghost", onclick: () => close(null) }, "취소")));
+        } }, t("변경")),
+        h("button", { class: "btn ghost", onclick: () => close(null) }, t("취소"))));
     document.body.append(ov);
     p1.input.focus();
   });
@@ -78,9 +90,9 @@ export function modal(title, content, okLabel = "확인", cancelLabel = "취소"
     const close = (v) => { ov.remove(); resolve(v); };
     const ov = h("div", { class: "overlay" },
       h("div", { class: "dialog", role: "dialog", "aria-modal": "true" },
-        h("h2", null, title), content,
-        h("button", { class: "btn primary", onclick: () => close(true) }, okLabel),
-        h("button", { class: "btn ghost", onclick: () => close(false) }, cancelLabel)));
+        h("h2", null, tr(title)), content,
+        h("button", { class: "btn primary", onclick: () => close(true) }, tr(okLabel)),
+        h("button", { class: "btn ghost", onclick: () => close(false) }, tr(cancelLabel))));
     document.body.append(ov);
   });
 }
@@ -103,7 +115,7 @@ export async function copyText(text) {
 
 // 00:00 형식 시간 입력 (숫자만 누르면 콜론이 자동으로 붙는다)
 export function timeInput(value, onChange) {
-  const el = h("input", { type: "text", inputmode: "numeric", maxlength: "5", placeholder: "00:00", class: "inp time", "aria-label": "출근시간", autocomplete: "off" });
+  const el = h("input", { type: "text", inputmode: "numeric", maxlength: "5", placeholder: "00:00", class: "inp time", "aria-label": t("시각"), autocomplete: "off" });
   el.value = value || "";
   el.addEventListener("input", () => {
     const d = el.value.replace(/\D/g, "").slice(0, 4);

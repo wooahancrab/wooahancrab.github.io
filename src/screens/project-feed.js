@@ -2,7 +2,7 @@
 // 글·이름·파일 이름은 모두 글자로만 화면에 넣는다(innerHTML 안 씀). 피드 영역만 다시 그려서 열어 둔 댓글칸이 남는다.
 // 읽음: 프로젝트를 여는 것만으로는 읽음이 아니다. 글이 화면에 0.8초 이상 보이면 읽은 것으로 모아 두었다가 한꺼번에 저장한다.
 import { h, toast, modal, confirmDialog, copyText } from "../lib/ui.js";
-import { dateOf, fmtHM, labelMD, todayKST } from "../lib/kst.js";
+import { dateOf, fmtHM, labelMDKo as labelMD, todayKST } from "../lib/kst.js";
 import { ALLOWED_EXT, checkFile, isImage, openLightbox } from "../lib/img.js";
 
 const PAGE = 20;
