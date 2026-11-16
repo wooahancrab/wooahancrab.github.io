@@ -35,6 +35,11 @@ export async function renderCeo(root, profile) {
 
   const badge = (label, c) => h("span", { class: "badge " + c }, label);
 
+  // 공지 자리(대표·부대표): 총괄 홈 맨 위에만 붙는다. 한 번만 만들어 다시 그려도 같은 자리를 쓴다.
+  // 사업장 칩으로 끼워 넣는 owner.js 화면(embedded)에는 공지를 그리지 않아 같은 공지가 두 번 나오지 않는다
+  const noticeHost = h("div");
+  import("./notices.js").then((m) => m.mountNotices(noticeHost, profile, { inline: true })).catch((e) => console.warn("[공지] 화면을 불러오지 못했어요:", e?.message));
+
   async function load() {
     try {
       // 보고판용 자료는 한꺼번에 불러와서 첫 화면이 느려지지 않게 한다(실패해도 그 칸만 숨김)
@@ -234,7 +239,7 @@ export async function renderCeo(root, profile) {
       pjOpen && sel === "all" ? pjView()
         : err ? h("div", { class: "page" }, h("p", { class: "err" }, t("불러오기 실패: {msg}", { msg: errText(err) })), h("button", { class: "btn ghost", onclick: load }, t("다시 시도")))
         : !ov ? h("div", { class: "page" }, h("p", { class: "muted" }, t("불러오는 중…")))
-        : sel === "all" ? (aiOpen ? aiView() : pjOpen ? pjView() : libOpen ? libView() : wkOpen ? wkView() : tkOpen ? tkView() : sgOpen ? sgView() : accountsOpen ? accountsView() : h("div", { class: "page" }, allView())) : storeView());
+        : sel === "all" ? (aiOpen ? aiView() : pjOpen ? pjView() : libOpen ? libView() : wkOpen ? wkView() : tkOpen ? tkView() : sgOpen ? sgView() : accountsOpen ? accountsView() : h("div", { class: "page" }, noticeHost, allView())) : storeView());
     scrollTo(0, y);
   }
 

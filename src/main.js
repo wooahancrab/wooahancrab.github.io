@@ -185,7 +185,10 @@ function tabbedHome(view, profile, tabs) {
     if (tab !== "st") api.setStore(null); // 재무 탭에서 고른 사업장이 다른 탭(내 출퇴근 등)에 남지 않게
     await tabs.find((t) => t[0] === tab)[2](pane, profile);
   };
-  view.append(bar, body);
+  // 공지: 탭 줄 위. 공지가 없으면 자리는 비어 있다(높이 0). 불러오기가 실패해도 다른 화면에는 영향이 없다
+  const nt = h("div", { id: "notices" });
+  view.append(nt, bar, body);
+  import("./screens/notices.js").then((m) => m.mountNotices(nt, profile)).catch((e) => console.warn("[공지] 화면을 불러오지 못했어요:", e?.message));
   show();
   // 프로젝트 탭: 모든 직원에게 보인다(새 프로젝트도 직원이 직접 만든다). ?p=프로젝트&post=글 주소로 바로 열기도 한다.
   const dl = new URLSearchParams(location.search);

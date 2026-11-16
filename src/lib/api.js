@@ -32,6 +32,25 @@ const DEMO_STORES = [
   { id: "demo-ck", name: "우아한CK", display_name: "우아한CK", kind: "ck", app_key: "ck" },
   { id: "demo-fnb", name: "우아한F&B", display_name: "우아한F&B", kind: "hq", app_key: "fnb" },
 ];
+// 공지 데모 자료: 이 화면을 연 동안 메모리에만 있다(새로 고치면 처음 상태). 사람 이름은 가짜다
+const ntDemo = {
+  rows: null, reads: new Map(),
+  seed() {
+    if (this.rows) return this.rows;
+    const ago = (d) => new Date(Date.now() - d * 86400e3).toISOString();
+    const base = { store_id: null, translated_at: null, important: false, expires_on: null, created_by: "demo", created_name: "대표(데모)", removed_at: null, title_vi: null, body_vi: null, title_en: null, body_en: null };
+    this.rows = [
+      { ...base, id: "demo-nt-1", important: true, created_at: ago(1), updated_at: ago(1), translated_at: ago(1),
+        title: "이번 주 위생 점검 안내", body: "금요일 오전에 위생 점검이 있어요.\n작업대와 냉장고 안쪽까지 한 번 더 닦아 주세요.",
+        title_vi: "Thông báo kiểm tra vệ sinh tuần này", body_vi: "Sáng thứ Sáu sẽ có đợt kiểm tra vệ sinh.\nHãy lau thêm một lần cả bàn làm việc và bên trong tủ lạnh.",
+        title_en: "Hygiene inspection this week", body_en: "There will be a hygiene inspection on Friday morning.\nPlease wipe down the work tables and the inside of the fridge once more." },
+      { ...base, id: "demo-nt-2", created_at: ago(3), updated_at: ago(3), title: "명절 연휴 근무표", body: "근무표는 이번 주 안에 알려 드릴게요. 바꾸고 싶은 날이 있으면 미리 말해 주세요." },
+    ];
+    return this.rows;
+  },
+  storeName(id) { const s = DEMO_STORES.find((x) => x.id === id); return s ? (s.display_name || s.name) : ""; },
+  view(r) { return { ...r, read_at: this.reads.get(r.id) ?? null, store_name: r.store_id ? this.storeName(r.store_id) : "" }; },
+};
 const demo = {
   async getProfile() {
     const s = LS.get("woo_demo_session", null);
@@ -57,7 +76,36 @@ const demo = {
   async libList() { return []; },
   async libUpload() { throw new Error("데모 모드에서는 파일을 올릴 수 없어요"); },
   async libUrl() { throw new Error("데모 모드에서는 파일을 열 수 없어요"); },
+  async libUpdate() { throw new Error("데모 모드에서는 파일을 고칠 수 없어요"); },
   async libDelete() {},
+  // 공지(데모): 메모리 안에서만 동작한다. 번역은 하지 않고(translated:false), 확인은 이 기기에서만 센다
+  async noticeList() { return ntDemo.seed().filter((r) => !r.removed_at).map((r) => ntDemo.view(r)).sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 100); },
+  async noticeRead(id) { if (!ntDemo.reads.has(id)) ntDemo.reads.set(id, new Date().toISOString()); },
+  async noticeStatus(id) {
+    const people = [{ user_id: "demo-u1", name: "직원A", job_title: "홀" }, { user_id: "demo-u2", name: "직원B", job_title: "주방" }, { user_id: "demo-u3", name: "직원C", job_title: "포장" }];
+    const at = ntDemo.reads.get(id);
+    return { targets: people.length, confirmed: at ? [{ ...people[0], at }] : [], pending: at ? people.slice(1) : people };
+  },
+  async noticeSave(p) {
+    const rows = ntDemo.seed(), now = new Date().toISOString();
+    if (!String(p.title ?? "").trim() || !String(p.body ?? "").trim()) throw new Error("제목과 내용을 적어 주세요");
+    const f = { title: p.title, body: p.body, store_id: p.store_id ?? null, important: !!p.important, expires_on: p.expires_on || null, updated_at: now };
+    let row = p.id ? rows.find((r) => r.id === p.id) : null;
+    if (row) {
+      if (row.title !== f.title || row.body !== f.body) Object.assign(row, { title_vi: null, body_vi: null, title_en: null, body_en: null, translated_at: null });
+      Object.assign(row, f);
+    } else {
+      row = { id: "demo-nt-" + Math.random().toString(36).slice(2, 8), title_vi: null, body_vi: null, title_en: null, body_en: null, translated_at: null, created_by: "demo", created_name: "대표(데모)", created_at: now, removed_at: null, ...f };
+      rows.unshift(row);
+    }
+    return { ok: true, notice: ntDemo.view(row), translated: false, pushed: 0 };
+  },
+  async noticeRetranslate(id) {
+    const row = ntDemo.seed().find((r) => r.id === id);
+    if (!row) throw new Error("공지를 찾지 못했어요");
+    return { ok: true, notice: ntDemo.view(row), translated: false };
+  },
+  async noticeRemove(id) { const row = ntDemo.seed().find((r) => r.id === id); if (row) row.removed_at = new Date().toISOString(); return { ok: true }; },
   async wkList() { return []; },
   async wkSave() { throw new Error("데모 모드에서는 업무 기록을 쓸 수 없어요"); },
   async wkDelete() {},
@@ -526,18 +574,35 @@ const remote = {
     if (error) throw error;
     return data;
   },
-  async libUpload(file, meta) { // meta: {title, folder, note, audience, store_id}
+  // 언어판 열(lang·doc_id)이 없는 서버(library2.sql 을 아직 안 돌림)인지 알아보고, 알아볼 수 있는 문장의 오류로 바꿔 돌려준다. usedNew = 이번 요청이 새 열을 보냈는가
+  libErr(e, usedNew) {
+    if (!usedNew) return e;
+    const m = String((e && e.message) || ""), code = String((e && (e.code || e.statusCode || e.status)) || "");
+    if (code === "PGRST204" || code === "42703" || (/\b(lang|doc_id)\b/i.test(m) && /column|schema cache/i.test(m))) return new Error("언어판을 올리려면 supabase/library2.sql 을 먼저 Run 해야 해요");
+    if (code === "23503" && !/store_id/i.test(m + " " + String((e && e.details) || ""))) return new Error("원본 문서가 이미 지워졌어요. 목록을 새로 불러온 뒤 다시 해 주세요"); // doc_id 가 가리키는 줄이 없음(사업장 연결 오류는 제외)
+    return e;
+  },
+  async libUpload(file, meta) { // meta: {title, folder, note, audience, store_id, lang?, doc_id?} — lang 기본 'ko', doc_id = 번역본이 가리키는 원본 문서
     const c = await sb(), p = await this.getProfile();
     if (file.size > 20 * 1024 * 1024) throw new Error("파일 하나는 20MB까지 올릴 수 있어요");
     const ext = (file.name.match(/\.[A-Za-z0-9]{1,8}$/) ?? [""])[0].toLowerCase();
     const path = `${crypto.randomUUID()}${ext}`; // 보관함에는 한글 이름 대신 번호로 저장하고, 원래 이름은 표에 남긴다
     const up = await c.storage.from("library").upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
     if (up.error) throw up.error;
-    const { error } = await c.from("library_files").insert({
+    const row = {
       store_id: meta.store_id ?? null, folder: meta.folder, title: meta.title, file_name: file.name, note: meta.note ?? "", path,
       size: file.size, mime: file.type || "", audience: meta.audience, uploaded_by: p.user_id, uploaded_name: p.display_name ?? "",
-    });
-    if (error) { await c.storage.from("library").remove([path]); throw error; }
+    };
+    // 한국어 단독 문서(lang 'ko'·원본 연결 없음)는 예전과 똑같이 새 열을 보내지 않는다 → library2.sql 을 아직 안 돌린 서버에서도 올리기가 된다
+    const lg = meta.lang || "ko", usedNew = lg !== "ko" || !!meta.doc_id;
+    if (usedNew) { row.lang = lg; if (meta.doc_id) row.doc_id = meta.doc_id; }
+    const { error } = await c.from("library_files").insert(row);
+    if (error) { await c.storage.from("library").remove([path]); throw this.libErr(error, usedNew); }
+  },
+  async libUpdate(row, patch) { // patch: {title?, lang?, doc_id?} — 올린 사람·대표만(lib_upd 정책). 언어·연결은 library2.sql 이 있어야 한다
+    const { data, error } = await (await sb()).from("library_files").update(patch).eq("id", row.id).select("id");
+    if (error) throw this.libErr(error, "lang" in patch || "doc_id" in patch);
+    if (!data || !data.length) throw new Error("고치지 못했어요. 권한이 없거나 이미 지운 파일이에요"); // 정책에 막히면 오류 없이 0줄이 고쳐진다
   },
   async libUrl(row, download = false) { // 60초짜리 임시 주소(로그인한 사람만 만들 수 있음)
     const { data, error } = await (await sb()).storage.from("library").createSignedUrl(row.path, 60, download ? { download: row.file_name || true } : undefined);
@@ -612,6 +677,57 @@ const remote = {
     }
     return (await this.sgUrls([path], { fresh: !!opts.fresh })).get(path) ?? "";
   },
+  // 공지(notices.sql + Edge Function notices). 읽기는 표(RLS)에서, 쓰기(올리기·고치기·내리기·다시 번역)는 서버 함수만 한다.
+  // 서버 함수는 store_id 를 자동으로 끼워 넣는 fn() 을 쓰지 않고 직접 부른다(공지의 사업장 선택과 섞이지 않게). 오류 처리는 fn() 과 같다.
+  async noticeFn(body) {
+    const { data, error } = await (await sb()).functions.invoke("notices", { body });
+    if (error) {
+      let msg = "서버에 연결하지 못했어요", code = "network";
+      try { const j = await error.context.json(); if (j?.error) { msg = j.error; code = j.code ?? "error"; } } catch { /* 기본 문구 */ }
+      if (code === "network" && error.context?.status === 404) { msg = "공지 기능이 아직 준비되지 않았어요"; code = "missing"; } // 서버 함수를 아직 올리지 않은 경우
+      throw Object.assign(new Error(msg), { code });
+    }
+    if (data?.error) throw Object.assign(new Error(data.error), { code: data.code ?? "error" });
+    return data;
+  },
+  // 내가 볼 수 있는 공지(내린 것 제외, 최신순 100개) + 내가 확인한 시각(read_at) + 사업장 이름(store_name). 두 표를 따로 읽어 합친다
+  async noticeList() {
+    const c = await sb();
+    const { data: { session } } = await c.auth.getSession();
+    if (!session) throw new Error("로그인이 필요해요");
+    const { data, error } = await c.from("notices").select("*, stores(display_name,name)").is("removed_at", null).order("created_at", { ascending: false }).limit(100);
+    if (error) throw error;
+    const rows = data ?? [], reads = new Map();
+    if (rows.length) {
+      const r = await c.from("notice_reads").select("notice_id,read_at").eq("user_id", session.user.id).in("notice_id", rows.map((x) => x.id));
+      if (r.error) throw r.error;
+      for (const x of r.data ?? []) reads.set(x.notice_id, x.read_at);
+    }
+    return rows.map(({ stores, ...n }) => ({ ...n, read_at: reads.get(n.id) ?? null, store_name: stores?.display_name ?? stores?.name ?? "" }));
+  },
+  // 확인했어요: 내 줄 하나를 넣는다(이미 있으면 무시)
+  async noticeRead(id) {
+    const c = await sb();
+    const { data: { session } } = await c.auth.getSession();
+    if (!session) throw new Error("로그인이 필요해요");
+    const { error } = await c.from("notice_reads").upsert({ notice_id: id, user_id: session.user.id }, { onConflict: "notice_id,user_id", ignoreDuplicates: true });
+    if (error) throw error;
+  },
+  // 확인 현황(대표·부대표): {targets, confirmed:[{user_id,name,job_title,at}], pending:[{user_id,name,job_title}]}
+  async noticeStatus(id) {
+    const { data, error } = await (await sb()).rpc("notice_status", { p_id: id });
+    if (error) throw error;
+    const d = data ?? {};
+    return { targets: Number(d.targets) || 0, confirmed: Array.isArray(d.confirmed) ? d.confirmed : [], pending: Array.isArray(d.pending) ? d.pending : [] };
+  },
+  // payload: {id?, title, body, store_id|null, important, expires_on|null, push} → {ok, notice, translated, pushed}
+  noticeSave(p) {
+    const body = { action: "save", title: p.title, body: p.body, store_id: p.store_id ?? null, important: !!p.important, expires_on: p.expires_on || null, push: !!p.push };
+    if (p.id) body.id = p.id;
+    return this.noticeFn(body);
+  },
+  noticeRetranslate(id) { return this.noticeFn({ action: "retranslate", id }); }, // → {ok, notice, translated}
+  noticeRemove(id) { return this.noticeFn({ action: "remove", id }); }, // → {ok}
   // 업무 기록(일지·일정·기록함): table = work_logs | work_events | work_notes. 보이는 범위는 서버(RLS)가 정한다.
   async wkList(table, all = false) { // all=true: 사업장 구분 없이 전체(대표·부대표 보고판용)
     let q = (await sb()).from(table).select("*");

@@ -188,6 +188,21 @@ ul.plain{margin:0;padding-left:1.1em}.plain-pre{white-space:pre-line;margin:0}
 .rc-h{margin:0 0 var(--s2);padding-bottom:4px;border-bottom:1px solid var(--line);font-size:.95rem;line-height:1.4}
 .rc-cause{margin:0;font-weight:700;color:var(--bad)}
 .rc-detail .entry{background:var(--card)}.rc-detail .btn{margin:var(--s2) 0 0}
+/* ── 자료함 언어판(.lb-): 문서 카드(제목·언어 배지·내 언어판 큰 버튼·다른 언어 칩·고치기 줄), 올리기 양식의 폴더 고르기 (색은 토큰만, 누르는 것은 44px 이상) ── */
+.lb-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:var(--s2)}
+.lb-title{flex:1 1 9rem;min-width:0}
+.lb-head .badges{flex:0 1 auto;justify-content:flex-start}.lb-head .badge{white-space:normal;text-align:center}
+/* 제목 옆에 배지가 들어갈 자리가 모자라면(긴 베트남어 제목·긴 공개 범위 이름) 배지가 제목 아래 줄로 내려간다 → 제목이 좁아져 여러 줄로 꺾이지 않는다 */
+.lb-open{margin:0}
+.lb-miss{margin:0}
+.lb-langs{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s2)}
+.lb-langs .chip{flex:none}
+.lb-actions{padding-top:var(--s3);border-top:1px solid var(--line)}
+.lb-actions .btn{margin:0}.lb-actions .btn:only-child{grid-column:1/-1}
+.lb-manage{display:flex;flex-direction:column}
+.lb-mrow{display:flex;align-items:center;justify-content:flex-end;gap:var(--s3);min-height:44px}
+.lb-mlang{flex:1;min-width:0;font-weight:700;font-size:.85rem}
+.lb-picks{margin:0}
 /* ── 건의함 첨부(.sg-): 직원 화면의 붙이기 목록, 대표 화면의 사진 썸네일·파일 칩 (색은 토큰만, 누르는 것은 44px 이상) ── */
 .sg-att{margin:var(--s2) 0}
 .sg-att>.btn{margin:var(--s2) 0}
@@ -216,3 +231,33 @@ ul.plain{margin:0;padding-left:1.1em}.plain-pre{white-space:pre-line;margin:0}
 .sg-cico{flex:none;font-size:1.3rem;line-height:1}
 .sg-cname{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:700}
 .sg-csize{flex:none}
+/* ── 공지(.nt-): 첫 화면 맨 위 공지 카드(안 읽음=왼쪽 레드 띠)·읽은 공지 한 줄, 대표·부대표의 공지 쓰기·관리 (색은 토큰만, 누르는 것은 44px 이상) ── */
+.nt-host{max-width:560px;margin:0 auto;padding:var(--s4) var(--gutter) 0}
+.nt-host.inline{max-width:none;margin:0 0 var(--s3);padding:0}
+.nt-host:empty{display:none}
+.nt-host>:first-child{margin-top:0}.nt-host>:last-child{margin-bottom:0}
+.nt-card{gap:6px;margin:var(--s2) 0;padding:var(--s3) var(--s4)}
+.nt-card.unread{border-left:4px solid var(--red)}
+.nt-card.off{background:var(--soft)}
+.nt-top{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+.nt-date{margin-left:auto;white-space:nowrap}
+.nt-title{font-size:1rem;line-height:1.4;overflow-wrap:anywhere}
+.nt-body{white-space:pre-wrap;overflow-wrap:anywhere;font-size:.95rem;line-height:1.55}
+.nt-body.clamp{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:4;line-clamp:4;overflow:hidden}
+.nt-card.post .nt-body.clamp{-webkit-line-clamp:2;line-clamp:2}
+.nt-morerow,.nt-note{display:flex;align-items:center;flex-wrap:wrap;gap:var(--s2)}
+.nt-morerow[hidden]{display:none}
+.nt-ok{margin:var(--s1) 0 0}
+.nt-all{margin:var(--s2) 0}
+.nt-bar .btn{margin:0}
+.nt-acts{display:flex;flex-wrap:wrap;gap:var(--s2);margin-top:var(--s1)}
+.nt-acts .btn{width:auto;flex:1 1 84px;min-width:0;margin:0;padding:8px 4px;font-size:.88rem}
+.nt-lines{margin:var(--s2) 0}
+.nt-rl .item{min-height:48px;border:0;border-radius:0;background:transparent}
+.nt-ltxt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nt-rl.open .chev{transform:rotate(90deg)}
+.nt-detail{display:flex;flex-direction:column;gap:6px;padding:0 var(--s4) var(--s3)}
+.nt-lblrow{display:flex;justify-content:space-between;align-items:baseline;gap:var(--s2);margin-top:var(--s3)}
+.nt-lblrow .lbl{margin:0}
+.nt-lblrow .linkbtn{flex:none;white-space:nowrap}
+.nt-err{margin:var(--s2) 0 0;font-weight:700}

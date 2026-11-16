@@ -15,4 +15,5 @@ import aiTask from "./parts/ai-task.js";
 import recon from "./parts/recon.js";
 import reconOut from "./parts/recon-out.js";
 import finance from "./parts/finance.js";
-export default { ...core.en, ...attendance.en, ...tasks.en, ...checklist.en, ...claims.en, ...suggest.en, ...library.en, ...adminOwner.en, ...adminOps.en, ...work.en, ...projects.en, ...projectFeed.en, ...aiTask.en, ...recon.en, ...reconOut.en, ...finance.en };
+import notices from "./parts/notices.js";
+export default { ...core.en, ...attendance.en, ...tasks.en, ...checklist.en, ...claims.en, ...suggest.en, ...library.en, ...adminOwner.en, ...adminOps.en, ...work.en, ...projects.en, ...projectFeed.en, ...aiTask.en, ...recon.en, ...reconOut.en, ...finance.en, ...notices.en };

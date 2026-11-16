@@ -119,6 +119,13 @@ export async function renderOwner(root, ctx, opts = {}) {
   const roleName = (r) => t(ROLE_KO[r] ?? "역할 없음");
   const isMaster = ctx.role === "owner"; // 부대표는 계정·설정을 바꿀 수 없다
   const canFinance = canViewFinance(ctx.role); // 매출-입금 대조: 대표·부대표·회장 (서버 can_view_finance 와 같다)
+  // 공지 자리: 사업장 화면 목록 맨 위에만 붙는다(하위·계정·상세 화면에는 안 그림). 처음 한 번만 만들어 다시 그려도 같은 자리를 쓴다.
+  // 총괄 앱(ceo.js)이 사업장 칩으로 끼워 넣은(embedded) 화면과 전체 계정 화면은 건너뛴다(총괄 홈에 이미 있어 같은 공지가 두 번 나오지 않게)
+  let noticeHost = null;
+  if (!opts.embedded && !opts.allAccounts) {
+    noticeHost = h("div");
+    import("./notices.js").then((m) => m.mountNotices(noticeHost, ctx, { inline: true })).catch((e) => console.warn("[공지] 화면을 불러오지 못했어요:", e?.message));
+  }
 
   // 하위 화면(출퇴근·매출·클레임 등)을 보는 중인가: 늦게 끝난 불러오기가 그 화면을 다시 그려 지우지 않게 한다
   const inSub = () => showTk || showChk || showCl || showSales || showWork || showShip || showSettle || showRecon || showAtt;
@@ -362,6 +369,7 @@ export async function renderOwner(root, ctx, opts = {}) {
 
   function main() {
     return h("div", { class: "page" },
+      noticeHost,
       h("div", { class: "toprow" }, pushBar(),
         hasReport && h("button", { class: "btn ghost slim", onclick: () => { showCl = true; draw(); } }, "📣 " + t("클레임")),
         opts.store?.kind === "hq" && h("button", { class: "btn ghost slim", onclick: () => { showTk = true; draw(); } }, t("📌 업무지시")),
