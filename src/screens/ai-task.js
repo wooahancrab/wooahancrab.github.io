@@ -6,6 +6,7 @@ import { api, isDemo } from "../lib/api.js";
 import { h, toast, confirmDialog, seg, bigToggle } from "../lib/ui.js";
 import { labelMD, dateOf, todayKST, parseDate, addDays } from "../lib/kst.js";
 import { t, tx, lang, dowNames } from "../lib/i18n.js";
+import { askSafety, isSafetyAsk, isSafety } from "../lib/tr.js";
 
 const MAX_TEXT = 600;
 const MAX_ROWS = 40;
@@ -166,6 +167,7 @@ function fromResponse(res) {
     memo: str(c.memo).slice(0, 200),
     due_date: isDate(c.due_date) ? c.due_date : null,
     repeat: REPEAT_VALUES.includes(c.repeat) ? c.repeat : "none",
+    safety: false, // '안전 관련(자동 번역 안 함)': AI 가 정하지 않는다. 카드에서 사람이 켠다
   };
   const rows = [];
   let skipped = 0;
@@ -333,7 +335,7 @@ export async function renderAiTask(root, opts = {}) {
       const meta = `${e.due_date ? t("마감 {d}", { d: labelMD(e.due_date) }) : ""}${e.repeat !== "none" ? (e.due_date ? " · " : "") + repLine(e.repeat) : ""}`;
       for (const p of e.people) {
         out.push(h("div", { class: "item col static", style: p.canceled ? "background:var(--soft)" : "" },
-          h("b", { style: p.canceled ? "text-decoration:line-through" : "" }, `${p.canceled ? "↩" : "✅"} ${p.t.display_name} · ${e.title}`),
+          h("b", { style: p.canceled ? "text-decoration:line-through" : "" }, `${p.canceled ? "↩" : "✅"} ${p.t.display_name} · ${e.safety ? "⚠ " : ""}${e.title}`),
           meta && h("span", { class: "muted" }, meta),
           !p.canceled && p.id && h("button", { type: "button", class: "btn ghost slim danger", disabled: !!p.busy, onclick: () => undoOne(p) }, p.busy ? t("취소하는 중…") : t("지시 취소"))));
       }
@@ -476,7 +478,7 @@ export async function renderAiTask(root, opts = {}) {
       seen.add(p.user_id);
       targets.push({ user_id: p.user_id, display_name: p.display_name || r.mention, job_title: p.job_title, store_name: p.store_name });
     }
-    return { targets, fresh: false, payload: { title, memo: c.memo.trim().slice(0, 200), due_date: isDate(c.due_date) ? c.due_date : null, repeat: c.repeat } };
+    return { targets, fresh: false, payload: { title, memo: c.memo.trim().slice(0, 200), due_date: isDate(c.due_date) ? c.due_date : null, repeat: c.repeat, safety: false } };
   }
 
   async function quickSend(plan) {
@@ -489,10 +491,13 @@ export async function renderAiTask(root, opts = {}) {
     st.results = targets.map((t) => ({ t, state: "wait", note: "", tried: false }));
     st.phase = "saving";
     draw(true);
-    try { await runSend(st.results); } finally { st.busy = false; }
+    let out = "ok";
+    try { out = await runSend(st.results); } finally { st.busy = false; }
+    // 안전 관련 되묻기에서 '돌아가기': 아무것도 저장되지 않았다. 확인 카드로 가서 사람이 고르게 한다
+    if (out === "cancel") { Object.assign(st, { phase: "card", results: [], payload: null, preIds: null }); draw(true); loadOpen(); return; }
     if (st.results.some((r) => r.state === "fail")) { st.phase = "result"; draw(true); finishNote(); refreshQuiet(); return; }
     // 모두 보냈으면 입력 화면으로 돌아가 한 줄 기록만 남긴다
-    const entry = { title: payload.title, due_date: payload.due_date, repeat: payload.repeat, people: st.results.map((r) => ({ t: r.t, id: null, canceled: false, busy: false })) };
+    const entry = { title: payload.title, due_date: payload.due_date, repeat: payload.repeat, safety: st.payload?.safety === true, people: st.results.map((r) => ({ t: r.t, id: null, canceled: false, busy: false })) };
     st.sent.unshift(entry);
     st.sent.length = Math.min(st.sent.length, 5);
     Object.assign(st, { phase: "input", text: "", err: null, res: null, card: null, rows: [], groupOk: false, payload: null, results: [] });
@@ -593,6 +598,11 @@ export async function renderAiTask(root, opts = {}) {
     const dateSub = h("div", { class: "muted" });
     const dueWarn = h("div", { class: "stack", style: "gap:4px" });
     const repBox = h("div");
+    // 안전 관련(자동 번역 안 함): 켜면 번역 없이 한국어 원문만 간다. 끄고 보내도 서버가 안전 관련 말을 찾으면 저장 전에 한 번 되묻는다
+    const safeBox = h("div", { class: "stack" });
+    const paintSafe = () => safeBox.replaceChildren(
+      bigToggle(t("안전 관련 (자동 번역 안 함)"), !!c.safety, (v) => { c.safety = v; paintSafe(); }),
+      h("p", { class: "hint", style: "margin:0" }, t("락스 희석 비율·보관 온도처럼 틀리면 위험한 내용이면 켜 주세요. 번역하지 않고 한국어로만 보내요.")));
     const whoTitle = h("h2", { style: "margin:0" }, t("담당자"));
     const whoBox = h("div", { class: "stack" });
     const why = h("p", { class: "hint", style: "margin:0 0 4px" });
@@ -701,12 +711,12 @@ export async function renderAiTask(root, opts = {}) {
       // 카드에 보이는 그대로를 담아 둔다. 확인하는 사이 카드가 바뀌면 보내지 않는다
       const snap = () => {
         const targets = targetList();
-        const payload = { title: c.title.trim().slice(0, 60), memo: c.memo.trim().slice(0, 200), due_date: curDue() || null, repeat: c.repeat };
+        const payload = { title: c.title.trim().slice(0, 60), memo: c.memo.trim().slice(0, 200), due_date: curDue() || null, repeat: c.repeat, safety: !!c.safety };
         return { targets, payload, sig: JSON.stringify([payload, targets.map((t) => t.user_id)]) };
       };
       const first = snap();
       st.busy = true; paintSubmit();
-      let started = false;
+      let started = false, cancelled = false;
       try {
         // 최신 열린 업무로 같은 업무 경고를 다시 계산. 6초 안에 못 읽으면 지난 목록으로 계속한다
         let fresh = false;
@@ -725,6 +735,7 @@ export async function renderAiTask(root, opts = {}) {
           if (payload.repeat !== "none") items.push(t("반복 업무는 완료할 때마다 다음 차례가 자동으로 생겨요."));
           if (payload.repeat === "monthly" && payload.due_date && Number(payload.due_date.slice(8, 10)) >= 29) items.push(t("매달 29~31일 반복은 짧은 달을 지나면 날짜가 28~30일로 굳어져요."));
           if (dups.length) items.push(t("이미 같은 업무가 진행 중: {names}", { names: dups.map((t) => t.display_name).join(", ") }));
+          if (payload.safety) items.push(t("안전 관련: 번역하지 않고 한국어로만 보내요"));
           if (!(await confirmDialog(t("이대로 지시할까요?"), items, t("돌아가기"), t("지시하기")))) return;
         }
         started = true;
@@ -735,19 +746,21 @@ export async function renderAiTask(root, opts = {}) {
         st.results = targets.map((t) => ({ t, state: "wait", note: "", tried: false }));
         st.phase = "saving";
         draw(true);
-        await runSend(st.results);
+        cancelled = (await runSend(st.results)) === "cancel"; // 안전 관련 되묻기에서 '돌아가기'면 아무것도 저장되지 않았다
       } catch (e) {
         console.error(e);
         if (!started) toast(t("지시를 준비하다 문제가 생겼어요. 다시 눌러 주세요"), 4000);
       } finally {
         st.busy = false;
-        if (started) { st.phase = "result"; draw(true); finishNote(); refreshQuiet(); } else if (!gone()) st.repaint?.(); // 새로 읽은 목록으로 경고를 다시 그리고 버튼을 푼다
+        if (cancelled) { Object.assign(st, { phase: "card", results: [], payload: null, preIds: null }); draw(true); } // 카드 그대로 돌아가 사람이 고르게 한다
+        else if (started) { st.phase = "result"; draw(true); finishNote(); refreshQuiet(); } else if (!gone()) st.repaint?.(); // 새로 읽은 목록으로 경고를 다시 그리고 버튼을 푼다
       }
     }
 
     st.repaint = paintWho;
     paintDate();
     paintRep();
+    paintSafe();
     paintWho();
 
     return h("div", { class: "page" },
@@ -769,7 +782,7 @@ export async function renderAiTask(root, opts = {}) {
         h("div", { class: "row2" }, due,
           h("button", { type: "button", class: "linkbtn", style: "white-space:nowrap;flex:none", onclick: () => { due.value = ""; onDue(); } }, tx("마감일", "지우기"))),
         dueWarn,
-        h("label", { class: "lbl" }, t("반복")), repBox),
+        h("label", { class: "lbl" }, t("반복")), repBox, safeBox),
       h("section", { class: "card" },
         whoTitle,
         !st.isTop && h("p", { class: "hint", style: "margin:0" }, t("내 담당 직원 중에서만 찾았어요.")),
@@ -806,19 +819,38 @@ export async function renderAiTask(root, opts = {}) {
     try {
       needApi("tkCreate");
       // 30초 안에 답이 없으면 실패로 둔다. 이미 만들어졌을 수 있어서 다시 보낼 때는 먼저 만들어졌는지 확인한다
-      await withTimeout(api.tkCreate({ title: p.title, memo: p.memo, assignee_id: r.t.user_id, due_date: p.due_date, repeat: p.repeat }, st.isTop), 30000);
+      // (서버는 번역을 14초 안에 끝내고, 같은 글을 여러 명에게 보낼 때는 첫 사람 뒤로 번역을 다시 하지 않아 — 실패한 글도 3분 동안은 다시 부르지 않는다 — 30초면 충분하다)
+      // 안전 관련(p.safety)이면 서버가 번역하지 않는다. 사람이 '아니요, 번역해서 보내기'를 골랐으면(p.ack) 감지어가 있어도 그대로 저장한다
+      const res = await withTimeout(api.tkCreate({ title: p.title, memo: p.memo, assignee_id: r.t.user_id, due_date: p.due_date, repeat: p.repeat, ...(p.safety ? { safety: true } : {}), ...(p.ack ? { safety_ack: true } : {}) }, st.isTop), 30000);
+      if (isSafetyAsk(res)) { r.state = "ask"; r.words = res.words; r.tried = false; return; } // 서버가 안전 관련 말을 찾았다: 아무것도 저장되지 않았다
       r.state = "ok"; r.note = "";
     } catch (e) {
       r.state = "fail"; r.note = saveErrText(e);
     }
   }
 
+  // 한 사람씩 차례로 보낸다. 안전 관련 말이 있으면 서버가 저장 전에 되묻는다 → 거기서 반복을 멈추고 사람에게 한 번만 묻는다.
+  // '안전 관련으로 보내기'·'아니요, 번역해서 보내기'를 고르면 같은 플래그로 그 사람부터 전원에게 보낸다. '돌아가기'면 아무것도 보내지 않고 "cancel"
   async function runSend(list) {
-    for (const r of list) {
+    for (let i = 0; i < list.length; i++) {
+      const r = list[i];
       r.state = "doing"; draw();
       await sendOne(r);
+      if (r.state === "ask") {
+        const pick = await askSafety(r.words);
+        if (!pick) {
+          for (const x of list.slice(i)) { x.state = "fail"; x.note = t("안전 관련인지 확인하지 않아 보내지 않았어요"); }
+          draw();
+          return "cancel";
+        }
+        st.payload = { ...st.payload, ...(pick === "safe" ? { safety: true } : { ack: true }) };
+        r.state = "doing"; draw();
+        await sendOne(r);
+        if (r.state === "ask") { r.state = "fail"; r.note = t("저장하지 못했어요"); } // 플래그를 붙였는데도 되묻는 일은 없다(방어)
+      }
       draw();
     }
+    return "ok";
   }
 
   async function retry(list) {
@@ -844,7 +876,7 @@ export async function renderAiTask(root, opts = {}) {
     const list = st.results, p = st.payload;
     const okN = list.filter((r) => r.state === "ok").length;
     const failed = list.filter((r) => r.state === "fail");
-    const mark = { ok: "✅", fail: "❌", doing: "⏳", wait: "⏸" };
+    const mark = { ok: "✅", fail: "❌", doing: "⏳", wait: "⏸", ask: "⏸" };
     return h("div", { class: "page" },
       !saving && back(),
       h("h1", null, saving ? t("지시하는 중…") : failed.length ? t("일부만 지시됐어요") : t("지시했어요 ✅")),
@@ -854,7 +886,8 @@ export async function renderAiTask(root, opts = {}) {
             : t("{n}명에게 지시했어요. 담당자 폰에 알림이 가요.", { n: okN })),
       h("section", { class: "card sub" },
         h("h3", null, p.title),
-        h("span", { class: "muted" }, `${p.due_date ? t("마감 {d}", { d: labelMD(p.due_date) }) : t("마감 없음")}${p.repeat !== "none" ? " · " + repLine(p.repeat) : ""}`)),
+        h("span", { class: "muted" }, `${p.due_date ? t("마감 {d}", { d: labelMD(p.due_date) }) : t("마감 없음")}${p.repeat !== "none" ? " · " + repLine(p.repeat) : ""}`),
+        p.safety && h("span", { class: "muted" }, "⚠ " + t("안전 관련으로 보냈어요 (번역 없이 한국어로만 가요)"))),
       h("div", { class: "list" }, list.map((r) => h("div", { class: "item col static", style: r.state === "fail" ? "border-color:var(--bad)" : "" },
         h("b", null, `${mark[r.state] ?? ""} ${personLine(r.t)}`),
         r.note && h("span", { class: r.state === "fail" ? "err" : "ok-text" }, r.note),
@@ -921,7 +954,7 @@ export async function renderAiTask(root, opts = {}) {
     const rep = tk.repeat && tk.repeat !== "none" ? (own(repeatLabels(), tk.repeat) ?? "") : "";
     const doing = st.cancelling.has(tk.id);
     return h("div", { class: "item col static" },
-      h("b", null, tk.title, late && h("span", { class: "badge bad", style: "margin-left:6px" }, t("밀림"))),
+      h("b", null, tk.title, late && h("span", { class: "badge bad", style: "margin-left:6px" }, t("밀림")), isSafety(tk) && h("span", { class: "badge bad", style: "margin-left:6px" }, t("⚠ 안전 업무"))),
       h("span", { class: "muted" }, `${t("담당 {name}", { name: tk.assignee_name || t("(삭제된 계정)") })} · ${isDate(tk.due_date) ? t("마감 {d}", { d: labelMD(tk.due_date) }) : t("마감 없음")}${rep ? " · " + t("{rep} 반복", { rep }) : ""}`),
       h("button", { type: "button", class: "btn ghost slim danger", disabled: doing || st.busy, onclick: () => cancelTask(tk) }, doing ? t("취소하는 중…") : t("지시 취소")));
   }

@@ -6,6 +6,7 @@ import { t, tx } from "../lib/i18n.js";
 import { renderOwner, errText } from "./owner.js";
 import { renderSuggestAdmin } from "./suggest.js";
 import { renderTasksAdmin } from "./tasks-admin.js";
+import { doneNoteInline } from "../lib/tr.js";
 import { renderWork } from "./work.js";
 import { renderLibrary } from "./library.js";
 
@@ -25,6 +26,7 @@ export async function renderCeo(root, profile) {
   let tk = null; // 업무지시 현황 {today, open, done}
   let libOpen = false; // 서식·자료함 화면
   let aiOpen = false; // 말로 업무지시(AI) 화면
+  let glOpen = false; // 회사 용어집 화면(대표·부대표)
   // 프로젝트 화면(대표·부대표). ?p=프로젝트&post=글 주소로 들어오면 바로 그 프로젝트를 연다
   const dl = new URLSearchParams(location.search);
   let pjOpts = { openId: dl.get("p") || null, postId: dl.get("post") || null };
@@ -57,7 +59,7 @@ export async function renderCeo(root, profile) {
     } catch (e) { err = e.message; }
     draw();
     // 프로젝트 안 읽음 숫자는 따로(느려도 첫 화면을 막지 않는다)
-    import("./projects.js").then((m) => m.pjSummary()).then((s) => { if (s.newPosts !== pjNew) { pjNew = s.newPosts; if (sel === "all" && !pjOpen && !aiOpen && !libOpen && !wkOpen && !tkOpen && !sgOpen && !accountsOpen) draw(); } }).catch(() => {});
+    import("./projects.js").then((m) => m.pjSummary()).then((s) => { if (s.newPosts !== pjNew) { pjNew = s.newPosts; if (sel === "all" && !pjOpen && !aiOpen && !libOpen && !wkOpen && !tkOpen && !sgOpen && !glOpen && !accountsOpen) draw(); } }).catch(() => {});
   }
 
   function choose(id) {
@@ -107,7 +109,7 @@ export async function renderCeo(root, profile) {
     const reps = ov.stores.filter((s) => s.report && !s.closed), repOk = reps.filter((s) => s.report.submitted).length;
     const recent = tk ? [
       ...late.slice(0, 5).map((x) => ({ k: 0, icon: "⚠", cls: "err", text: `${sname(x.store_id)} ${x.assignee_name} · ${x.title}`, sub: t("마감 {d} 지남", { d: labelMD(x.due_date) }) })),
-      ...(tk.done ?? []).slice(0, 6).map((x) => ({ k: 1, icon: "✅", cls: "ok-text", text: `${sname(x.store_id)} ${x.done_by_name || x.assignee_name} · ${x.title}`, sub: `${labelMD(dateOf(x.done_at))} ${fmtHM(x.done_at)}${x.done_note ? " — " + x.done_note : ""}` })),
+      ...(tk.done ?? []).slice(0, 6).map((x) => ({ k: 1, icon: "✅", cls: "ok-text", text: `${sname(x.store_id)} ${x.done_by_name || x.assignee_name} · ${x.title}`, sub: [`${labelMD(dateOf(x.done_at))} ${fmtHM(x.done_at)}`, doneNoteInline(x)] })),
     ] : [];
     return h("div", null,
       h("div", { style: "display:flex;gap:8px;flex-wrap:wrap;margin:10px 0" },
@@ -166,7 +168,16 @@ export async function renderCeo(root, profile) {
       // 대표(마스터)만: 모든 사업장 계정을 한 곳에서 관리 (부대표는 전체 소속)
       profile.role === "owner" && h("button", { class: "btn ghost", style: "margin-top:12px", onclick: () => { accountsOpen = true; draw(); } }, t("👤 전체 계정 관리 (사업장·부대표 포함)")),
       // 건의함은 대표만(부대표도 못 봄)
-      profile.role === "owner" && h("button", { class: "btn ghost", style: "margin-top:8px", onclick: () => { sgOpen = true; draw(); } }, t("💌 건의함") + (sgNew > 0 ? ` (${t("새 건의 {n}", { n: sgNew })})` : "")));
+      profile.role === "owner" && h("button", { class: "btn ghost", style: "margin-top:8px", onclick: () => { sgOpen = true; draw(); } }, t("💌 건의함") + (sgNew > 0 ? ` (${t("새 건의 {n}", { n: sgNew })})` : "")),
+      // 회사 용어집(대표·부대표): 이 총괄 앱은 대표·부대표만 들어오고, 화면 안에서 GLOSSARY_ROLES 로 한 번 더 확인한다(역할 목록은 거기와 SQL 두 곳에만 둔다)
+      h("button", { class: "btn ghost", style: "margin-top:8px", onclick: () => { glOpen = true; draw(); } }, t("📖 회사 용어집")));
+  }
+
+  function glView() {
+    const holder = h("div");
+    import("./glossary.js").then((m) => m.renderGlossary(holder, { profile, onBack: () => { glOpen = false; draw(); } }))
+      .catch((e) => holder.replaceChildren(h("p", { class: "err", style: "padding:16px" }, t("용어집 화면을 불러오지 못했어요: {msg}", { msg: errText(e.message) }))));
+    return holder;
   }
 
   function accountsView() {
@@ -229,7 +240,7 @@ export async function renderCeo(root, profile) {
   let boardY = 0, wasSub = false, wasSel = sel;
   function draw() {
     let y = scrollY;
-    const sub = sel === "all" && (pjOpen || aiOpen || libOpen || wkOpen || tkOpen || sgOpen || accountsOpen);
+    const sub = sel === "all" && (pjOpen || aiOpen || libOpen || wkOpen || tkOpen || sgOpen || glOpen || accountsOpen);
     if (sub && !wasSub && wasSel === "all") { boardY = y; y = 0; } // 새 화면은 맨 위에서 시작(예전에는 그리는 도중 짧아졌다 늘어나며 저절로 맨 위가 됐다)
     else if (!sub && wasSub && sel === "all" && wasSel === "all") y = boardY;
     wasSub = sub; wasSel = sel;
@@ -239,7 +250,7 @@ export async function renderCeo(root, profile) {
       pjOpen && sel === "all" ? pjView()
         : err ? h("div", { class: "page" }, h("p", { class: "err" }, t("불러오기 실패: {msg}", { msg: errText(err) })), h("button", { class: "btn ghost", onclick: load }, t("다시 시도")))
         : !ov ? h("div", { class: "page" }, h("p", { class: "muted" }, t("불러오는 중…")))
-        : sel === "all" ? (aiOpen ? aiView() : pjOpen ? pjView() : libOpen ? libView() : wkOpen ? wkView() : tkOpen ? tkView() : sgOpen ? sgView() : accountsOpen ? accountsView() : h("div", { class: "page" }, noticeHost, allView())) : storeView());
+        : sel === "all" ? (aiOpen ? aiView() : pjOpen ? pjView() : libOpen ? libView() : wkOpen ? wkView() : tkOpen ? tkView() : sgOpen ? sgView() : glOpen ? glView() : accountsOpen ? accountsView() : h("div", { class: "page" }, noticeHost, allView())) : storeView());
     scrollTo(0, y);
   }
 

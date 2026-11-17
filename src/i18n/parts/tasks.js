@@ -33,6 +33,8 @@ export default {
     "내 담당 직원이 아니면 지시할 수 없어요": "Chỉ có thể giao việc cho nhân viên do bạn phụ trách",
     "반복 업무는 첫 마감일이 필요해요": "Công việc lặp lại cần có hạn chót đầu tiên",
     "내가 지시한 업무가 아니에요": "Đây không phải công việc do bạn giao",
+    "안전 관련 업무는 번역하지 않아요": "Công việc về an toàn không được dịch",
+    "번역 기능이 아직 켜지지 않았어요": "Tính năng dịch chưa được bật",
     // api.js 연결 오류 문구
   },
   en: {
@@ -66,6 +68,8 @@ export default {
     "내 담당 직원이 아니면 지시할 수 없어요": "You can only assign tasks to staff under you",
     "반복 업무는 첫 마감일이 필요해요": "Repeating tasks need a first due date",
     "내가 지시한 업무가 아니에요": "You didn't assign this task",
+    "안전 관련 업무는 번역하지 않아요": "Safety-related tasks aren't translated",
+    "번역 기능이 아직 켜지지 않았어요": "Translation isn't turned on yet",
     // api.js 연결 오류 문구
   },
 };

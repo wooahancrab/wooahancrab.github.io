@@ -261,3 +261,37 @@ ul.plain{margin:0;padding-left:1.1em}.plain-pre{white-space:pre-line;margin:0}
 .nt-lblrow .lbl{margin:0}
 .nt-lblrow .linkbtn{flex:none;white-space:nowrap}
 .nt-err{margin:var(--s2) 0 0;font-weight:700}
+/* ── 회사 용어집(.gl-): 합성 안내·버튼 줄·검색·거르기·용어 카드·추가/붙여넣기 창 (색은 토큰만, 누르는 것은 44px 이상) ── */
+.gl-page{overflow-anchor:none} /* 버튼 줄·목록을 다시 그릴 때 브라우저가 스크롤을 따로 옮기지 않게(보던 자리는 코드가 그대로 되돌린다) */
+.gl-bar{display:flex;flex-direction:column;gap:var(--s2);margin:var(--s3) 0}
+.gl-bar .btn{margin:0}
+.gl-bar2{display:grid;grid-template-columns:1fr 1fr;gap:var(--s2)}
+.gl-bar2 .btn{min-width:0;padding:8px 6px;font-size:.88rem}
+.gl-bar2 .btn:last-child:nth-child(odd){grid-column:1/-1}
+.gl-sum{gap:6px;margin:var(--s3) 0}
+.gl-warn{color:var(--warn);font-size:.85rem;line-height:1.5}
+.gl-search{margin:var(--s2) 0}
+.gl-filter .segbtn{min-width:45%;min-height:44px}
+.gl-card{gap:6px;margin:var(--s2) 0;padding:var(--s3) var(--s4)}
+.gl-top{display:flex;flex-wrap:wrap;align-items:center;gap:6px var(--s2)}
+.gl-ko{flex:0 1 auto;min-width:0;font-size:1rem;line-height:1.4;overflow-wrap:anywhere}
+.gl-top .badges{flex:0 1 auto;justify-content:flex-start;margin-left:auto}
+.gl-tr{display:flex;align-items:baseline;gap:var(--s2);font-size:.95rem;line-height:1.5;overflow-wrap:anywhere}
+.gl-lg{flex:none;min-width:2em;font-size:.8rem;font-weight:700;text-transform:uppercase;color:var(--muted)}
+.gl-acts{display:flex;gap:var(--s2);margin-top:var(--s1)}
+.gl-acts .btn{width:auto;flex:1 1 84px;min-width:0;margin:0;padding:8px 4px;font-size:.88rem}
+.gl-lblrow{display:flex;justify-content:space-between;align-items:baseline;gap:var(--s2);margin-top:var(--s3)}
+.gl-lblrow .lbl{margin:0}
+.gl-draft{margin:var(--s2) 0 var(--s1)}
+.gl-prev{display:flex;flex-direction:column;gap:var(--s1);margin:var(--s2) 0;font-size:.9rem}
+.gl-err{margin:var(--s2) 0 0;font-weight:700}
+.gl-empty{text-align:center}
+.gl-empty p{margin:0}
+/* ── 업무 번역(.tr-): 자동 번역 배지·원문 보기 줄, 안전 업무 배지·안내 (색은 토큰만, 누르는 것은 44px 이상) ── */
+.tr-note{display:flex;align-items:center;flex-wrap:wrap;gap:var(--s2);margin-top:2px}
+.tr-note .linkbtn{font-size:.8rem;font-weight:700}
+.tr-safe{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-top:2px}
+.tr-hint,.tr-fail{font-size:.8rem;line-height:1.4;color:var(--muted)}
+.tr-words{margin:0 0 var(--s2);font-weight:700;overflow-wrap:anywhere}
+.tr-mini{margin-left:6px;padding:0 8px}
+.rt.done .tr-note{justify-content:center}.rt.done .tr-safe{align-items:center}
