@@ -19,8 +19,8 @@ export default {
     "프로젝트 탭::파일": "Tệp",
     "참여자": "Thành viên",
     // ── 안내문 ──
-    "대표·부대표는 모든 프로젝트를 볼 수 있어요. 고객 개인정보·급여·통장 자료는 올리지 마세요": "Giám đốc và Phó giám đốc có thể xem tất cả dự án. Vui lòng không tải lên thông tin cá nhân của khách hàng, bảng lương hoặc sao kê ngân hàng",
-    "대표·부대표는 명단에 없어도 모든 프로젝트를 볼 수 있어요": "Giám đốc và Phó giám đốc có thể xem tất cả dự án dù không có tên trong danh sách",
+    "대표·부대표·회장은 모든 프로젝트를 볼 수 있어요. 고객 개인정보·급여·통장 자료는 올리지 마세요": "Giám đốc, Phó giám đốc và Chủ tịch có thể xem tất cả dự án. Vui lòng không tải lên thông tin cá nhân của khách hàng, bảng lương hoặc sao kê ngân hàng",
+    "대표·부대표·회장은 명단에 없어도 모든 프로젝트를 볼 수 있어요": "Giám đốc, Phó giám đốc và Chủ tịch có thể xem tất cả dự án dù không có tên trong danh sách",
     // ── 알림 켜기 ──
     "새 글 알림을 받으려면 알림을 켜 주세요": "Vui lòng bật thông báo để biết ngay khi có bài viết mới",
     "알림을 켜지 못했어요": "Không bật được thông báo",
@@ -132,7 +132,7 @@ export default {
     "내보냈어요": "Đã xóa khỏi dự án",
     "프로젝트에서 나갈까요?": "Rời khỏi dự án này?",
     "나가도 내가 쓴 글과 파일은 그대로 남아요": "Dù bạn rời đi, bài viết và tệp của bạn vẫn được giữ lại",
-    "내가 마지막 프로젝트 관리자예요. 나가면 대표·부대표만 참여자를 관리할 수 있어요": "Bạn là quản trị viên dự án cuối cùng. Nếu rời đi, chỉ Giám đốc và Phó giám đốc mới quản lý được thành viên",
+    "내가 마지막 프로젝트 관리자예요. 나가면 대표·부대표·회장만 참여자를 관리할 수 있어요": "Bạn là quản trị viên dự án cuối cùng. Nếu rời đi, chỉ Giám đốc, Phó giám đốc và Chủ tịch mới quản lý được thành viên",
     "나가기": "Rời khỏi",
     "프로젝트에서 나왔어요": "Bạn đã rời khỏi dự án",
     // ── 오류: 프로젝트 서버 함수·DB (supabase/projects.sql, projects-2.sql) ──
@@ -231,8 +231,8 @@ export default {
     "프로젝트 탭::파일": "Files",
     "참여자": "Members",
     // ── 안내문 ──
-    "대표·부대표는 모든 프로젝트를 볼 수 있어요. 고객 개인정보·급여·통장 자료는 올리지 마세요": "The CEO and Deputy CEO can see all projects. Please do not upload customer personal data, payroll, or bank statements",
-    "대표·부대표는 명단에 없어도 모든 프로젝트를 볼 수 있어요": "The CEO and Deputy CEO can see all projects even if they are not on the member list",
+    "대표·부대표·회장은 모든 프로젝트를 볼 수 있어요. 고객 개인정보·급여·통장 자료는 올리지 마세요": "The CEO, Deputy CEO and Chairman can see all projects. Please do not upload customer personal data, payroll, or bank statements",
+    "대표·부대표·회장은 명단에 없어도 모든 프로젝트를 볼 수 있어요": "The CEO, Deputy CEO and Chairman can see all projects even if they are not on the member list",
     // ── 알림 켜기 ──
     "새 글 알림을 받으려면 알림을 켜 주세요": "Turn on notifications to be alerted about new posts",
     "알림을 켜지 못했어요": "Couldn't turn on notifications",
@@ -344,7 +344,7 @@ export default {
     "내보냈어요": "Member removed",
     "프로젝트에서 나갈까요?": "Leave this project?",
     "나가도 내가 쓴 글과 파일은 그대로 남아요": "Your posts and files will remain even if you leave",
-    "내가 마지막 프로젝트 관리자예요. 나가면 대표·부대표만 참여자를 관리할 수 있어요": "You are the last project admin. If you leave, only the CEO and Deputy CEO can manage members",
+    "내가 마지막 프로젝트 관리자예요. 나가면 대표·부대표·회장만 참여자를 관리할 수 있어요": "You are the last project admin. If you leave, only the CEO, Deputy CEO and Chairman can manage members",
     "나가기": "Leave",
     "프로젝트에서 나왔어요": "You left the project",
     // ── 오류: 프로젝트 서버 함수·DB (supabase/projects.sql, projects-2.sql) ──

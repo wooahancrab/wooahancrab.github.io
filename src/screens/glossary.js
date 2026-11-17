@@ -8,8 +8,8 @@ import { h, toast, confirmDialog, modal, bigToggle, seg } from "../lib/ui.js";
 import { t, tx } from "../lib/i18n.js";
 
 // 용어집을 쓸 수 있는 역할. 서버 SQL 함수 can_manage_glossary()(supabase/glossary.sql) 와 항상 같게 둔다.
-// 회장(chairman) 역할이 생기면 여기와 그 SQL 함수에 한 줄씩만 더한다(CLAUDE.md 3단계 목록).
-export const GLOSSARY_ROLES = ["owner", "deputy"];
+// 회장(chairman)은 3단계에서 더했다. 역할을 바꿀 때는 여기와 그 SQL 함수 두 곳만 같이 고친다.
+export const GLOSSARY_ROLES = ["owner", "deputy", "chairman"];
 export const canManageGlossary = (role) => GLOSSARY_ROLES.includes(role);
 
 const MAX = { ko: 40, vi: 80, en: 80, note: 120, aliases: 120 }; // 서버 check 와 같게

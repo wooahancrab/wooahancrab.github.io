@@ -11,7 +11,7 @@ import { askSafety, isSafetyAsk, isSafety } from "../lib/tr.js";
 const MAX_TEXT = 600;
 const MAX_ROWS = 40;
 const MAX_MINE = 30;
-const TOP_ROLES = ["owner", "deputy"];
+const TOP_ROLES = ["owner", "deputy", "chairman"]; // 회장(chairman)은 부대표와 같다(전 직원에게 지시)
 const LEAD_ROLES = ["manager", "supervisor"];
 // 화면에 보이는 한국어는 화면을 그릴 때 t()로 만든다(모듈 맨 위에서는 화면 언어가 아직 한국어라서 표를 함수로 둔다)
 const REPEAT_VALUES = ["none", "daily", "weekly", "monthly"];

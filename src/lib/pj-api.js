@@ -101,7 +101,7 @@ export function makePj({ sb, me }) {
     return p;
   }
 
-  const isTopRole = (p) => p.role === "owner" || p.role === "deputy";
+  const isTopRole = (p) => p.role === "owner" || p.role === "deputy" || p.role === "chairman"; // 서버 pj_can_see·pj_is_admin 과 같게(회장은 부대표와 같다)
 
   async function isAdmin(pid) {
     if (isTopRole(await profile())) return true;

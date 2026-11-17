@@ -8,8 +8,8 @@ import { t, tx, locale } from "../lib/i18n.js";
 
 // 화면에 보이는 한국어는 모두 t()로 감싼다(한국어 화면에서는 글이 그대로 나온다).
 // 모듈 맨 위에서는 화면 언어가 아직 한국어라서, 표시용 글(안내문·색 이름·탭 이름)은 함수로 두고 그릴 때 부른다
-const notice = () => t("대표·부대표는 모든 프로젝트를 볼 수 있어요. 고객 개인정보·급여·통장 자료는 올리지 마세요");
-const membersNote = () => t("대표·부대표는 명단에 없어도 모든 프로젝트를 볼 수 있어요");
+const notice = () => t("대표·부대표·회장은 모든 프로젝트를 볼 수 있어요. 고객 개인정보·급여·통장 자료는 올리지 마세요");
+const membersNote = () => t("대표·부대표·회장은 명단에 없어도 모든 프로젝트를 볼 수 있어요");
 const DEFAULT_COLOR = "#A3161A";
 const colors = () => [
   [DEFAULT_COLOR, t("빨강")], ["#d9822b", t("주황")], ["#c9a227", t("노랑")], ["#2e8b57", t("초록")],
@@ -470,7 +470,7 @@ async function renderMembers({ pane, ctx, live, onLeft }) {
     const adminN = state.list.filter((m) => m.role === "admin").length;
     const lastAdmin = ctx.myRole === "admin" && !ctx.isTop && adminN <= 1;
     const items = [document.createTextNode(String(ctx.project.name ?? "")), t("나가도 내가 쓴 글과 파일은 그대로 남아요")];
-    if (lastAdmin) items.push(t("내가 마지막 프로젝트 관리자예요. 나가면 대표·부대표만 참여자를 관리할 수 있어요"));
+    if (lastAdmin) items.push(t("내가 마지막 프로젝트 관리자예요. 나가면 대표·부대표·회장만 참여자를 관리할 수 있어요"));
     if (!(await confirmDialog(t("프로젝트에서 나갈까요?"), items, t("취소"), t("나가기")))) return;
     try {
       await pj.leave(ctx.project.id);
@@ -574,7 +574,7 @@ export async function renderProjects(root, opts = {}) {
     return;
   }
   if (!alive()) return;
-  isTop = prof.role === "owner" || prof.role === "deputy";
+  isTop = prof.role === "owner" || prof.role === "deputy" || prof.role === "chairman"; // 회장은 부대표와 같다(프로젝트 삭제만 대표 전용 — 아래 prof.role === "owner")
   document.addEventListener("visibilitychange", onVis);
   window.addEventListener("popstate", onPop);
   watchTimer = setInterval(alive, 1000);

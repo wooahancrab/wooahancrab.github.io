@@ -3,7 +3,7 @@ import { api } from "../lib/api.js";
 import { h, toast } from "../lib/ui.js";
 import { fmtHM, dateOf, labelMD } from "../lib/kst.js";
 import { t, tx } from "../lib/i18n.js";
-import { renderOwner, errText } from "./owner.js";
+import { renderOwner, errText, titleRole } from "./owner.js";
 import { renderSuggestAdmin } from "./suggest.js";
 import { renderTasksAdmin } from "./tasks-admin.js";
 import { doneNoteInline } from "../lib/tr.js";
@@ -13,6 +13,8 @@ import { renderLibrary } from "./library.js";
 // 사업장 짧은 이름(칩·목록용). 화면 언어가 정해진 뒤 그릴 때 평가돼야 해서 함수로 둔다
 const shortName = (key) => ({ gejang: t("게장"), ck: "CK", fnb: "F&B" })[key];
 const KIND_ICON = { restaurant: "🦀", ck: "🏭", hq: "🏢" };
+// 소속 인원 목록의 오늘 출근 상태: [글자(한국어 키), 배지 색]. 색만으로 구분하지 않게 글자를 항상 붙인다. 모르는 값은 '기록 없음'
+const TODAY_STATE = { in: ["출근 중", "ok"], done: ["퇴근", "info"], none: ["기록 없음", ""] };
 
 export async function renderCeo(root, profile) {
   let stores = [];
@@ -26,7 +28,8 @@ export async function renderCeo(root, profile) {
   let tk = null; // 업무지시 현황 {today, open, done}
   let libOpen = false; // 서식·자료함 화면
   let aiOpen = false; // 말로 업무지시(AI) 화면
-  let glOpen = false; // 회사 용어집 화면(대표·부대표)
+  let glOpen = false; // 회사 용어집 화면(대표·부대표·회장)
+  const memOpen = new Set(); // 소속 인원 목록을 펼쳐 둔 사업장 id(기본은 접힘. 다시 그려도 유지)
   // 프로젝트 화면(대표·부대표). ?p=프로젝트&post=글 주소로 들어오면 바로 그 프로젝트를 연다
   const dl = new URLSearchParams(location.search);
   let pjOpts = { openId: dl.get("p") || null, postId: dl.get("post") || null };
@@ -88,15 +91,44 @@ export async function renderCeo(root, profile) {
     return n;
   }
 
+  // 소속 인원 한 줄: 이름 + "직책 · 역할" + 오늘 출근 상태(글자 배지). 줄 순서는 서버가 정한 그대로 둔다
+  function memberRow(m) {
+    const { jt, rn } = titleRole(m.job_title, m.role);
+    const [label, cls] = TODAY_STATE[m.today] ?? TODAY_STATE.none;
+    // 부대표·회장은 앱으로 출퇴근을 하지 않아 기록이 늘 없다 — '기록 없음' 배지가 정직원 미출근처럼 읽히지 않게 숨긴다
+    const noClock = m.role === "deputy" || m.role === "chairman";
+    return h("div", { class: "scm-row" },
+      h("div", { class: "scm-main" }, h("b", null, m.name || t("(이름 없음)")), h("span", { class: "muted" }, jt ? `${jt} · ${rn}` : rn)),
+      noClock && m.today === "none" ? null : badge(tx("총괄", label), cls));
+  }
+
+  // 사업장 카드 아래 '소속 인원 보기'(기본 접힘) + 목록. 누르는 것이 카드(button) 안에 들어가지 않게 카드 밖에 둔다. 접힘·펼침은 다시 그려도 유지(memOpen)
+  function membersBox(st, members) {
+    const body = h("div", { id: "scm-" + st.id }, h("div", { class: "rowlist scm-list" }, members.length ? members.map(memberRow) : h("p", { class: "muted scm-empty" }, t("소속된 사람이 없어요"))));
+    const tog = h("button", { type: "button", class: "btn ghost slim scm-toggle", "aria-controls": "scm-" + st.id });
+    const apply = () => {
+      const on = memOpen.has(st.id);
+      tog.setAttribute("aria-expanded", on ? "true" : "false");
+      tog.replaceChildren(on ? t("소속 인원 접기") : t("소속 인원 보기"), h("span", { class: "scm-arrow", "aria-hidden": "true" }, on ? "▴" : "▾"));
+      body.hidden = !on;
+    };
+    tog.addEventListener("click", () => { if (memOpen.has(st.id)) memOpen.delete(st.id); else memOpen.add(st.id); apply(); });
+    apply();
+    return h("div", { class: "scm" }, tog, body);
+  }
+
   function card(st) {
     const a = st.attendance;
     const alerts = needs(st);
-    return h("button", { class: "scard", onclick: () => choose(st.id) },
+    const members = Array.isArray(st.members) ? st.members : null; // 옛 서버 응답(소속 인원 목록 없음)이면 목록 단추를 숨긴다
+    const total = Number.isFinite(st.people) ? st.people : members ? members.length : 0; // 새 서버: 사업장 소속 전원(대표 제외). 옛 서버: 직원·매니저만 센 수
+    const main = h("button", { class: "scard", onclick: () => choose(st.id) },
       h("div", { class: "top2" }, h("b", null, `${KIND_ICON[st.kind] ?? ""} ${st.display_name}`), st.closed ? badge(tx("총괄", "휴무"), "warn2") : alerts.some(([, c]) => c === "bad") ? badge(t("확인 필요"), "bad") : badge(tx("총괄", "정상"), "ok")),
-      h("div", { class: "srow" }, h("span", null, t("👥 출근")), h("b", null, t("{n} / {total}명", { n: a.in_today, total: st.people })), a.working > 0 && h("span", { class: "muted" }, t("근무 중 {n}", { n: a.working }))),
+      h("div", { class: "srow" }, h("span", null, t("👥 출근")), h("b", null, t("{n} / {total}명", { n: a.in_today, total })), a.working > 0 && h("span", { class: "muted" }, t("근무 중 {n}", { n: a.working }))),
       st.kind === "restaurant" && h("div", { class: "srow" }, h("span", null, "📣 " + t("클레임")), h("b", null, st.claims.open ? t("{n}건 진행 중", { n: st.claims.open }) : tx("총괄", "없음"))),
       st.report && h("div", { class: "srow" }, h("span", null, "📝 " + t("일일보고")), h("b", null, st.report.submitted ? t("제출 {time}", { time: fmtHM(st.report.at) }) : st.closed ? tx("총괄", "휴무") : t("미제출"))),
       alerts.length > 0 && h("div", { class: "badges", style: "justify-content:flex-start;margin-top:6px" }, alerts.map(([label, c]) => badge(label, c))));
+    return members ? h("div", { class: "scwrap" }, main, membersBox(st, members)) : main;
   }
 
   // 보고판: 업무지시(진행·밀림·완료)·일일보고·건의함을 한 화면에서 훑어본다. 타일을 누르면 해당 화면으로.
@@ -165,11 +197,11 @@ export async function renderCeo(root, profile) {
         h("button", { class: "item", onclick: () => { libOpen = true; draw(); } }, t("📁 서식·자료함"), h("span", { class: "chev", "aria-hidden": "true" })),
         h("button", { class: "item", onclick: () => { pjOpen = true; draw(); } }, "📂 " + t("프로젝트"), h("span", { class: "chev", "aria-hidden": "true" }))),
       h("div", { class: "list sec" }, ov.stores.map(card)),
-      // 대표(마스터)만: 모든 사업장 계정을 한 곳에서 관리 (부대표는 전체 소속)
+      // 대표(마스터)만: 모든 사업장 계정을 한 곳에서 관리 (부대표·회장은 못 봄)
       profile.role === "owner" && h("button", { class: "btn ghost", style: "margin-top:12px", onclick: () => { accountsOpen = true; draw(); } }, t("👤 전체 계정 관리 (사업장·부대표 포함)")),
-      // 건의함은 대표만(부대표도 못 봄)
+      // 건의함은 대표만(부대표·회장도 못 봄 — 읽는 사람은 6단계에서 정한다. 직원 화면의 "대표만 볼 수 있어요" 문구도 그때 함께)
       profile.role === "owner" && h("button", { class: "btn ghost", style: "margin-top:8px", onclick: () => { sgOpen = true; draw(); } }, t("💌 건의함") + (sgNew > 0 ? ` (${t("새 건의 {n}", { n: sgNew })})` : "")),
-      // 회사 용어집(대표·부대표): 이 총괄 앱은 대표·부대표만 들어오고, 화면 안에서 GLOSSARY_ROLES 로 한 번 더 확인한다(역할 목록은 거기와 SQL 두 곳에만 둔다)
+      // 회사 용어집(대표·부대표·회장): 이 총괄 앱은 대표·부대표·회장만 들어오고, 화면 안에서 GLOSSARY_ROLES 로 한 번 더 확인한다(역할 목록은 거기와 SQL 두 곳에만 둔다)
       h("button", { class: "btn ghost", style: "margin-top:8px", onclick: () => { glOpen = true; draw(); } }, t("📖 회사 용어집")));
   }
 
@@ -183,7 +215,8 @@ export async function renderCeo(root, profile) {
   function accountsView() {
     const holder = h("div", { id: "ceo-accounts" });
     api.setStore(null);
-    renderOwner(holder, profile, { allAccounts: true, stores, onBack: () => { accountsOpen = false; draw(); } });
+    // 돌아오면 먼저 홈을 그리고, 계정에서 바꾼 이름·직책·역할이 사업장 카드의 소속 인원에도 보이게 현황을 다시 불러온다
+    renderOwner(holder, profile, { allAccounts: true, stores, onBack: () => { accountsOpen = false; draw(); load(); } });
     return holder;
   }
 

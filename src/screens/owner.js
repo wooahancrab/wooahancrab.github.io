@@ -14,7 +14,17 @@ import { renderWork } from "./work.js";
 import { claimItems, kakaoText, summarize, normalize, TRASH } from "../lib/report.js";
 
 // 서버·기기가 준 한국어 오류 문구를 화면 언어로(한국어일 때는 그대로). 값이 붙는 문구는 틀을 찾아 값을 채운다.
-const ROLE_NAME = { owner: "대표", deputy: "부대표", manager: "매니저", supervisor: "중간관리자", staff: "직원" };
+const ROLE_NAME = { owner: "대표", deputy: "부대표", chairman: "회장", manager: "매니저", supervisor: "중간관리자", staff: "직원" };
+// 역할 이름(화면 언어로). 모르는 역할이면 빈 글자 — 총괄 화면(ceo.js)의 소속 인원 목록도 이것을 쓴다
+export const roleText = (r) => (ROLE_NAME[r] ? t(ROLE_NAME[r]) : "");
+// "직책 · 역할" 한 줄(계정 관리 목록·총괄 소속 인원 목록 공용): 직책이 비어 있거나 역할 이름과 같으면 직책은 빼고 역할만 보인다
+export function titleRole(jobTitle, role) {
+  const jt = String(jobTitle ?? "").trim(), rn = roleText(role) || t("역할 없음");
+  return { jt: jt && jt !== rn && jt !== ROLE_NAME[role] ? jt : "", rn };
+}
+// 사업장 없이 전체를 보는 윗사람 역할: 회장(chairman)은 부대표와 같은 쪽(계정·비밀번호·매장 설정만 대표 전용)
+const TOP_ROLES = ["owner", "deputy", "chairman"];
+const isTop = (r) => TOP_ROLES.includes(r);
 const ERR_PATTERNS = [
   [/^계정 확인에 실패했어요: ([\s\S]*)$/, "계정 확인에 실패했어요: {msg}", ["msg"]],
   [/^대표만 사용할 수 있어요 \(현재 역할: ([\s\S]*)\)$/, "대표만 사용할 수 있어요 (현재 역할: {role})", ["role"]],
@@ -108,16 +118,15 @@ export async function renderOwner(root, ctx, opts = {}) {
     return Array.from(a, (n) => ch[n % ch.length]).join("");
   };
   const newAcc = { name: "", title: "", email: "", password: "", password2: "", role: "manager" };
-  // 전체 계정 화면에서 새 계정을 어느 사업장에 넣을지 (부대표는 사업장 없이 전체 소속)
+  // 전체 계정 화면에서 새 계정을 어느 사업장에 넣을지 (부대표·회장은 사업장 없이 전체 소속)
   const pick = { store: opts.stores?.[0]?.id ?? null };
   const storeName = (id) => opts.stores?.find((s) => s.id === id)?.display_name ?? "";
   const storePicker = () => opts.allAccounts && opts.stores?.length
-    ? h("div", { class: "stack" }, h("label", { class: "lbl" }, t("소속 사업장 (부대표는 전체 소속이라 무시돼요)")),
+    ? h("div", { class: "stack" }, h("label", { class: "lbl" }, t("소속 사업장 (부대표·회장은 전체 소속이라 무시돼요)")),
         seg(opts.stores.map((s) => [s.id, s.display_name || s.name]), pick.store, (v) => { pick.store = v; draw(); }))
     : null;
-  const ROLE_KO = { owner: "대표", deputy: "부대표", manager: "매니저", supervisor: "중간관리자", staff: "직원" };
-  const roleName = (r) => t(ROLE_KO[r] ?? "역할 없음");
-  const isMaster = ctx.role === "owner"; // 부대표는 계정·설정을 바꿀 수 없다
+  const roleName = (r) => t(ROLE_NAME[r] ?? "역할 없음");
+  const isMaster = ctx.role === "owner"; // 부대표·회장은 계정·설정을 바꿀 수 없다
   const canFinance = canViewFinance(ctx.role); // 매출-입금 대조: 대표·부대표·회장 (서버 can_view_finance 와 같다)
   // 공지 자리: 사업장 화면 목록 맨 위에만 붙는다(하위·계정·상세 화면에는 안 그림). 처음 한 번만 만들어 다시 그려도 같은 자리를 쓴다.
   // 총괄 앱(ceo.js)이 사업장 칩으로 끼워 넣은(embedded) 화면과 전체 계정 화면은 건너뛴다(총괄 홈에 이미 있어 같은 공지가 두 번 나오지 않게)
@@ -234,11 +243,11 @@ export async function renderOwner(root, ctx, opts = {}) {
     const roleBox = h("div", { class: "stack" });
     const renderRole = () => roleBox.replaceChildren(
       h("label", { class: "lbl" }, t("역할 (권한)")),
-      seg([["staff", roleOpt("직원")], ["supervisor", roleOpt("중간관리자")], ["manager", roleOpt("매니저")], ["deputy", roleOpt("부대표")]], role, (v) => { role = v; renderRole(); }),
-      h("p", { class: "hint" }, role === "deputy" ? t("부대표: 모든 사업장의 출퇴근·클레임·보고를 보고 처리. 계정·비밀번호·매장 설정은 못 바꿈") : role === "supervisor" ? t("중간관리자: 자기에게 배정된 직원의 출퇴근·클레임만 관리. 계정·설정은 못 바꿈") : role === "manager" ? t("매니저: 일일보고 작성, 매장 직원 출퇴근 기록 조회·수정 가능") : t("직원: 본인 출퇴근만 사용")));
+      seg([["staff", roleOpt("직원")], ["supervisor", roleOpt("중간관리자")], ["manager", roleOpt("매니저")], ["deputy", roleOpt("부대표")], ["chairman", roleOpt("회장")]], role, (v) => { role = v; renderRole(); }),
+      h("p", { class: "hint" }, role === "chairman" ? t("회장: 부대표와 같은 화면·권한. 계정·비밀번호·매장 설정은 못 바꿈") : role === "deputy" ? t("부대표: 모든 사업장의 출퇴근·클레임·보고를 보고 처리. 계정·비밀번호·매장 설정은 못 바꿈") : role === "supervisor" ? t("중간관리자: 자기에게 배정된 직원의 출퇴근·클레임만 관리. 계정·설정은 못 바꿈") : role === "manager" ? t("매니저: 일일보고 작성, 매장 직원 출퇴근 기록 조회·수정 가능") : t("직원: 본인 출퇴근만 사용")));
     if (u.role !== "owner") renderRole();
     // 담당 관리자 배정 (직원이 누구에게 관리받는지, 관리자가 퇴근한 뒤엔 누가 맡는지)
-    const leaders = users.filter((x) => ["supervisor", "manager", "deputy", "owner"].includes(x.role) && x.id !== u.id);
+    const leaders = users.filter((x) => ["supervisor", "manager", "deputy", "chairman", "owner"].includes(x.role) && x.id !== u.id);
     const pick = (cur) => {
       const s = h("select", { class: "inp" }, h("option", { value: "" }, t("지정 안 함")), ...leaders.map((x) => h("option", { value: x.id }, `${x.display_name || x.email} (${roleName(x.role)})`)));
       s.value = cur ?? "";
@@ -260,14 +269,14 @@ export async function renderOwner(root, ctx, opts = {}) {
       h("label", { class: "lbl" }, t("화면 언어 (이 사람이 앱을 보는 언어)") + (langPick ? "" : " — " + t("아직 안 정함: 폰 언어대로 보여요"))),
       seg([["ko", "한국어"], ["vi", "Tiếng Việt"], ["en", "English"]], langPick, (v) => { langPick = v; renderLang(); }));
     renderLang();
-    const content = h("div", { class: "stack" }, h("p", { class: "muted" }, u.email), name, title, langBox, u.role !== "owner" && roleBox, u.role !== "owner" && u.role !== "deputy" && assignBox, u.role !== "owner" && u.role !== "deputy" && settleBox);
+    const content = h("div", { class: "stack" }, h("p", { class: "muted" }, u.email), name, title, langBox, u.role !== "owner" && roleBox, !isTop(u.role) && assignBox, !isTop(u.role) && settleBox);
     for (;;) {
       if (!(await modal(t("이름·직책·역할 수정"), content, t("저장"), t("취소")))) return;
       if (!name.value.trim()) { toast(t("이름을 입력해 주세요")); continue; }
       const body = { action: "update_profile", user_id: u.id, display_name: name.value, job_title: title.value };
       if (langPick && langPick !== u.lang) body.lang = langPick;
       if (u.role !== "owner" && role !== u.role) body.role = role;
-      if (u.role !== "owner" && u.role !== "deputy") { body.can_settle = settleChk.checked; body.supervisor_id = supSel.value; body.after_hours_id = afterSel.value; body.managed_until = untilInp.value; }
+      if (!isTop(u.role)) { body.can_settle = settleChk.checked; body.supervisor_id = supSel.value; body.after_hours_id = afterSel.value; body.managed_until = untilInp.value; }
       if (await userAction(body, role !== u.role ? t("역할을 바꿨어요. 다시 로그인하면 적용돼요") : t("저장했어요"))) return;
     }
   }
@@ -292,14 +301,23 @@ export async function renderOwner(root, ctx, opts = {}) {
     await loadUsers();
   }
 
-  // 소속별로 묶기: 대표·부대표는 "전체", 나머지는 사업장별. (사업장 하나만 보는 화면에서는 한 덩어리)
+  // 소속별로 묶기: 사업장(store_id)이 있으면 어느 역할이든(부대표·회장 포함) 그 사업장 묶음, 사업장이 없는 대표·부대표·회장만 "전체",
+  // 사업장이 없는 중간관리자·매니저·직원(또는 목록에 없는 사업장)은 "소속 미지정". (사업장 하나만 보는 화면에서는 한 덩어리)
   function groupedUsers() {
     if (!opts.allAccounts) return [[t("계정"), users]];
-    const groups = [[t("전체 (마스터·부대표)"), users.filter((u) => u.role === "owner" || u.role === "deputy")]];
-    for (const s of opts.stores ?? []) groups.push([s.display_name || s.name, users.filter((u) => u.role !== "owner" && u.role !== "deputy" && u.store_id === s.id)]);
-    const rest = users.filter((u) => u.role !== "owner" && u.role !== "deputy" && !(opts.stores ?? []).some((s) => s.id === u.store_id));
-    if (rest.length) groups.push([t("소속 없음"), rest]);
+    const stores = opts.stores ?? [];
+    const inStore = (u) => stores.some((s) => s.id === u.store_id);
+    const groups = [[t("전체 (대표·부대표·회장)"), users.filter((u) => isTop(u.role) && !u.store_id)]];
+    for (const s of stores) groups.push([s.display_name || s.name, users.filter((u) => u.store_id === s.id)]);
+    const rest = users.filter((u) => !inStore(u) && !(isTop(u.role) && !u.store_id));
+    if (rest.length) groups.push([t("소속 미지정"), rest]);
     return groups;
+  }
+
+  // 계정 줄 맨 위: 이름 + "직책 · 역할"(역할은 배지)
+  function accWho(u) {
+    const { jt, rn } = titleRole(u.job_title, u.role);
+    return h("div", { class: "acc-who" }, h("b", null, u.display_name || t("(이름 없음)")), " ", jt && h("span", { class: "muted" }, jt + " · "), h("span", { class: "badge" }, rn));
   }
 
   function accountsView() {
@@ -311,7 +329,7 @@ export async function renderOwner(root, ctx, opts = {}) {
       usersBusy && !users.length && h("p", { class: "muted" }, t("불러오는 중…")), // 목록이 이미 있으면(저장 뒤 다시 불러올 때) 줄을 끼워 넣지 않아 보던 자리가 밀리지 않는다
       usersMsg && h("p", { class: "err" }, errText(usersMsg)),
       ...groupedUsers().map(([label, list]) => [h("h2", { class: "cat-title" }, tx("계정 관리", "{label} ({n}명)", { label, n: list.length })), list.length > 0 && h("div", { class: "rowlist" }, list.map((u) => h("div", { class: "acc" },
-        h("div", null, h("b", null, u.display_name || t("(이름 없음)")), u.job_title && h("span", { class: "muted" }, " · " + u.job_title), " ", h("span", { class: "badge" }, roleName(u.role))),
+        accWho(u),
         h("div", { class: "muted" }, u.email),
         u.last_sign_in_at && h("div", { class: "muted" }, t("마지막 로그인 {when}", { when: new Date(u.last_sign_in_at).toLocaleString(locale(), { timeZone: "Asia/Seoul" }) })),
         h("div", { class: "acc-btns" },
@@ -328,7 +346,7 @@ export async function renderOwner(root, ctx, opts = {}) {
         h("p", { class: "muted" }, t("한 줄에 한 명씩 \"이름 직책\"(직책은 생략 가능). 이메일과 임시 비밀번호는 자동으로 만들어요.")),
         storePicker(),
         h("textarea", { class: "inp", rows: "4", placeholder: t("김철수 주방\n이영희 포장"), value: bulk.text, oninput: (e) => (bulk.text = e.target.value) }),
-        seg([["staff", roleOpt("직원")], ["supervisor", roleOpt("중간관리자")], ["manager", roleOpt("매니저")], ["deputy", roleOpt("부대표")]], bulk.role, (v) => { bulk.role = v; draw(); }),
+        seg([["staff", roleOpt("직원")], ["supervisor", roleOpt("중간관리자")], ["manager", roleOpt("매니저")], ["deputy", roleOpt("부대표")], ["chairman", roleOpt("회장")]], bulk.role, (v) => { bulk.role = v; draw(); }),
         h("button", { class: "btn primary", disabled: bulk.busy, onclick: bulkAdd }, bulk.busy ? t("만드는 중…") : t("계정 만들기")),
         bulk.result && bulk.result.length > 0 && !bulk.busy && h("div", { class: "stack" },
           h("p", { class: "ok-text" }, t("아래 정보를 직원에게 전달하세요. 비밀번호는 이 화면을 벗어나면 다시 볼 수 없어요.")),
@@ -344,7 +362,7 @@ export async function renderOwner(root, ctx, opts = {}) {
         h("button", { type: "button", class: "btn ghost slim", onclick: () => { newAcc.password = newAcc.password2 = genPw(); newAcc.shown = newAcc.password; draw(); } }, t("🎲 임시 비밀번호 자동 생성")),
         newAcc.shown && newAcc.shown === newAcc.password && h("p", { class: "ok-text" }, t("임시 비밀번호: {pw}  (추가 후에는 다시 볼 수 없어요)", { pw: newAcc.shown })),
         pwHint,
-        seg([["manager", roleOpt("매니저")], ["supervisor", roleOpt("중간관리자")], ["staff", roleOpt("직원")], ["deputy", roleOpt("부대표")]], newAcc.role, (v) => { newAcc.role = v; draw(); }),
+        seg([["manager", roleOpt("매니저")], ["supervisor", roleOpt("중간관리자")], ["staff", roleOpt("직원")], ["deputy", roleOpt("부대표")], ["chairman", roleOpt("회장")]], newAcc.role, (v) => { newAcc.role = v; draw(); }),
         h("button", { class: "btn primary", onclick: async () => {
           if (newAcc.password.length < 8) { toast(t("비밀번호는 8자 이상이어야 해요")); return; }
           if (newAcc.password !== newAcc.password2) { toast(t("두 비밀번호가 서로 달라요. 다시 확인해 주세요"), 4000); return; }

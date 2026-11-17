@@ -32,6 +32,35 @@ const DEMO_STORES = [
   { id: "demo-ck", name: "우아한CK", display_name: "우아한CK", kind: "ck", app_key: "ck" },
   { id: "demo-fnb", name: "우아한F&B", display_name: "우아한F&B", kind: "hq", app_key: "fnb" },
 ];
+// 데모 계정 이름(로그인한 사람의 머리글에 보임). 모두 가상이다
+const DEMO_NAMES = { owner: "대표(데모)", deputy: "부대표(데모)", chairman: "회장(데모)", manager: "매니저(데모)", supervisor: "중간관리자(데모)", staff: "김자유(데모)" };
+// 데모 소속 자료: 총괄 사업장 카드의 소속 인원(overview.members)과 계정 관리 목록(adminUsers list)이 같이 쓴다. 이름·직책은 모두 가상이다.
+// store_id 가 없는 대표·회장은 '전체', 사업장이 있는 사람은(부대표 포함) 그 사업장 소속, 사업장이 없는 중간관리자는 '소속 미지정'. today = in(출근 중)·done(퇴근)·none(기록 없음)
+// 화면을 연 동안 메모리에만 있다(새로 고치면 처음 상태).
+const DEMO_ROLE_ORDER = ["deputy", "chairman", "supervisor", "manager", "staff"]; // 서버 overview 의 MEMBER_ROLES 순서 흉내(같은 역할은 이름 순). 계정 역할로 고를 수 있는 값이기도 하다
+const demoPeople = (() => {
+  const row = (id, role, store_id, display_name, job_title, today) => ({ id, email: `${id}@demo`, role, store_id, display_name, job_title, today, can_settle: false, supervisor_id: null, after_hours_id: null, managed_until: "", lang: null, last_sign_in_at: null });
+  return [
+    row("owner", "owner", null, "대표(데모)", "대표", "none"),
+    row("chairman", "chairman", null, "회장(데모)", "회장", "none"),
+    row("fnb-deputy", "deputy", "demo-fnb", "최전무(데모)", "전무", "in"),
+    row("fnb-sup1", "supervisor", "demo-fnb", "김부장(데모)", "부장", "in"),
+    row("fnb-sup2", "supervisor", "demo-fnb", "이과장(데모)", "과장", "done"),
+    row("fnb-sup3", "supervisor", "demo-fnb", "박주임(데모)", "주임", "none"),
+    row("fnb-s1", "staff", "demo-fnb", "정사무(데모)", "사무", "in"),
+    row("fnb-s2", "staff", "demo-fnb", "오사무(데모)", "", "none"),
+    row("gj-m1", "manager", "demo-gejang", "매니저(데모)", "매니저", "in"),
+    row("gj-s1", "staff", "demo-gejang", "김자유(데모)", "홀 서버", "in"),
+    row("gj-s2", "staff", "demo-gejang", "박고정(데모)", "주방", "done"),
+    row("ck-sup", "supervisor", "demo-ck", "윤반장(데모)", "반장", "in"),
+    row("ck-s1", "staff", "demo-ck", "조작업(데모)", "포장", "in"),
+    row("loose-sup", "supervisor", null, "임시관리(데모)", "", "none"),
+  ];
+})();
+// 한 사업장의 소속 인원(대표 제외 전원) → overview 응답의 members: [{user_id, name, job_title, role, today}]
+const demoMembers = (storeId) => demoPeople.filter((p) => p.store_id === storeId && p.role !== "owner")
+  .sort((a, b) => DEMO_ROLE_ORDER.indexOf(a.role) - DEMO_ROLE_ORDER.indexOf(b.role) || a.display_name.localeCompare(b.display_name, "ko"))
+  .map((p) => ({ user_id: p.id, name: p.display_name, job_title: p.job_title, role: p.role, today: p.today }));
 // 공지 데모 자료: 이 화면을 연 동안 메모리에만 있다(새로 고치면 처음 상태). 사람 이름은 가짜다
 const ntDemo = {
   rows: null, reads: new Map(),
@@ -237,7 +266,7 @@ const tkDemo = {
 const demo = {
   async getProfile() {
     const s = LS.get("woo_demo_session", null);
-    return s ? { role: s.role, store_name: "본촌점", display_name: { owner: "대표(데모)", manager: "매니저(데모)", staff: "김자유(데모)" }[s.role] } : null;
+    return s ? { role: s.role, store_name: "본촌점", display_name: DEMO_NAMES[s.role] } : null;
   },
   async setMyLang() { /* 데모 모드: 이 기기에만 저장(화면에서 처리) */ },
   async signIn(role) { LS.set("woo_demo_session", { role }); },
@@ -353,7 +382,11 @@ const demo = {
   async listStores() { return DEMO_STORES; },
   async overview() {
     const z = { in_today: 0, working: 0, not_in: 0, missing_out: 0, pending_approval: 0 };
-    return { stores: DEMO_STORES.map((s) => ({ ...s, closed: false, people: 3, attendance: { ...z, in_today: 2 }, claims: { open: s.app_key === "gejang" ? 1 : 0, severe: 0 }, report: s.kind === "restaurant" ? { submitted: false } : null })) };
+    // people = 그 사업장 소속 전원(대표 제외), members = 소속 인원 목록(서버 overview 와 같은 모양)
+    return { stores: DEMO_STORES.map((s) => {
+      const members = demoMembers(s.id);
+      return { ...s, closed: false, people: members.length, members, attendance: { ...z, in_today: members.filter((m) => m.today !== "none").length, working: members.filter((m) => m.today === "in").length }, claims: { open: s.app_key === "gejang" ? 1 : 0, severe: 0 }, report: s.kind === "restaurant" ? { submitted: false } : null };
+    }) };
   },
   async getReport(date) { return LS.get("woo_demo_reports", {})[date] ?? null; },
   async saveReport(date, data) {
@@ -401,7 +434,20 @@ const demo = {
   async stPatch(id, f) { LS.set("woo_demo_recv", LS.get("woo_demo_recv", []).map((r) => (r.id === id ? { ...r, ...f } : r))); },
   async stDelete(id) { LS.set("woo_demo_recv", LS.get("woo_demo_recv", []).filter((r) => r.id !== id)); },
   async adminUsers(body) {
-    if (body.action === "list") return { users: [{ id: "1", email: "owner@demo", role: "owner", display_name: "대표(데모)", job_title: "대표" }, { id: "2", email: "manager@demo", role: "manager", display_name: "매니저(데모)", job_title: "매니저" }] };
+    if (body.action === "list") return { users: demoPeople.map(({ today, ...u }) => ({ ...u })) };
+    // 이름·직책·역할 수정만 흉내 낸다(메모리 안에서만 바뀐다). 대표 계정의 역할은 못 바꾼다(서버와 같다)
+    if (body.action === "update_profile") {
+      const u = demoPeople.find((x) => x.id === body.user_id);
+      if (!u) throw new Error("대상을 찾지 못했어요");
+      if (body.role && body.role !== u.role) {
+        if (u.role === "owner") throw new Error("대표 계정의 역할은 바꿀 수 없어요");
+        if (!DEMO_ROLE_ORDER.includes(body.role)) throw new Error("역할이 올바르지 않아요");
+        u.role = body.role;
+      }
+      if (typeof body.display_name === "string") u.display_name = body.display_name.trim() || u.display_name;
+      if (typeof body.job_title === "string") u.job_title = body.job_title.trim();
+      return { ok: true };
+    }
     throw new Error("데모 모드에서는 계정을 바꿀 수 없어요");
   },
   // 데모 전용: 최근 3주 샘플 데이터

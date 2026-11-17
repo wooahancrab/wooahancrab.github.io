@@ -28,7 +28,7 @@ export async function renderWork(root, opts = {}) {
   const sn = (r) => (RO ? (shortStore((opts.stores ?? []).find((s) => s.id === r.store_id)?.app_key) ?? "") + " " : "");
   const prof = await api.getProfile();
   const me = prof.user_id;
-  const viewer = prof.role === "owner" || prof.role === "deputy" || !!prof.can_settle;
+  const viewer = prof.role === "owner" || prof.role === "deputy" || prof.role === "chairman" || !!prof.can_settle; // 서버 work_* 정책과 같게(회장은 부대표와 같다)
   const today = todayKST();
   let tab = "log", who = "all", q = "", loading = true, err = "";
   let data = { work_logs: [], work_events: [], work_notes: [] };

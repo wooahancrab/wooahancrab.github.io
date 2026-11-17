@@ -40,7 +40,9 @@ function drawKakaoBanner() {
   document.body.prepend(kakaoBanner);
 }
 
-const ROLE_LABEL = { owner: "대표", deputy: "부대표", manager: "매니저", supervisor: "중간관리자", staff: "직원" };
+const ROLE_LABEL = { owner: "대표", deputy: "부대표", chairman: "회장", manager: "매니저", supervisor: "중간관리자", staff: "직원" };
+// 대표 총괄 화면에 들어가는 역할: 회장(chairman)은 부대표와 같은 쪽(계정·비밀번호·매장 설정만 대표 전용)
+const TOP_ROLES = ["owner", "deputy", "chairman"];
 // 역할 이름(화면 언어로). 모르는 역할이면 빈 글자
 const roleLabel = (r) => (ROLE_LABEL[r] ? t(ROLE_LABEL[r]) : "");
 
@@ -68,7 +70,7 @@ function shell(profile, content) {
   app.replaceChildren(
     h("header", { class: "top" },
       h("img", { src: "/icons/logo-mark.png", class: "top-logo", alt: "" }),
-      h("b", null, APP.key === "ceo" ? APP.name : profile.role === "owner" || profile.role === "deputy" ? APP.name : profile.store_display),
+      h("b", null, APP.key === "ceo" ? APP.name : TOP_ROLES.includes(profile.role) ? APP.name : profile.store_display),
       // 오른쪽 위: 접속한 사람의 이름과 직책(직책을 안 적어 둔 계정은 역할 이름)
       h("span", { class: "who", title: `${profile.display_name ?? ""} ${profile.job_title || roleLabel(profile.role)}`.trim() },
         h("span", { class: "nm" }, profile.display_name || roleLabel(profile.role) || profile.role),
@@ -101,7 +103,9 @@ function loginScreen(msg) {
           h("div", { class: "banner" }, t("데모 모드 — 이 기기 안에만 저장돼요")),
           h("button", { class: "btn primary", onclick: async () => { await api.signIn("manager"); boot(); } }, t("매니저로 입장")),
           h("button", { class: "btn ghost", onclick: async () => { await api.signIn("staff"); boot(); } }, t("직원으로 입장")),
-          h("button", { class: "btn ghost", onclick: async () => { await api.signIn("owner"); boot(); } }, t("대표로 입장")))
+          h("button", { class: "btn ghost", onclick: async () => { await api.signIn("owner"); boot(); } }, t("대표로 입장")),
+          h("button", { class: "btn ghost", onclick: async () => { await api.signIn("deputy"); boot(); } }, t("부대표로 입장")),
+          h("button", { class: "btn ghost", onclick: async () => { await api.signIn("chairman"); boot(); } }, t("회장으로 입장")))
       : h("form", { onsubmit: (e) => { e.preventDefault(); go(); } }, email, pw, errBox,
           h("button", { class: "btn primary", type: "submit" }, t("로그인"))),
     h("button", { class: "linkbtn", type: "button", style: "margin-top:12px", onclick: async () => { const l = await openLangSettings(); if (l && l !== lang()) { await setLang(l); boot(); } } }, "🌐 언어 · Ngôn ngữ · Language")));
@@ -127,7 +131,7 @@ async function boot() {
       ["cl", t("클레임"), renderClaims], ["att", t("내 출퇴근"), renderAttendance]];
     if (profile.store_kind === "restaurant") tabs.unshift(["report", t("일일보고"), renderManager]);
     tabbedHome(view, profile, tabs);
-  } else if (profile.role === "owner" || profile.role === "deputy") { // 부대표는 같은 화면, 계정·설정만 막힘
+  } else if (TOP_ROLES.includes(profile.role)) { // 부대표·회장은 같은 화면, 계정·설정만 막힘
     if (APP.key === "ceo") { await renderCeo(view, profile); return; }
     const store = (await api.listStores()).find((s) => s.app_key === APP.key);
     if (!store) { view.append(h("p", { class: "err", style: "padding:16px" }, t("이 앱에 연결된 사업장을 찾지 못했어요"))); return; }

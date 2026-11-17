@@ -8,7 +8,7 @@ const LS = {
 const KEY = "woo_demo_claims";
 const err = (message, code = "error") => Object.assign(new Error(message), { code });
 const role = () => LS.get("woo_demo_session", {}).role ?? "staff";
-const meName = () => ({ staff: "김자유(데모)", manager: "매니저(데모)", owner: "대표(데모)" }[role()]);
+const meName = () => ({ staff: "김자유(데모)", manager: "매니저(데모)", supervisor: "중간관리자(데모)", owner: "대표(데모)", deputy: "부대표(데모)", chairman: "회장(데모)" }[role()]);
 const canManage = () => role() !== "staff";
 
 export const claimsDemo = {

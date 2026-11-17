@@ -295,3 +295,11 @@ ul.plain{margin:0;padding-left:1.1em}.plain-pre{white-space:pre-line;margin:0}
 .tr-words{margin:0 0 var(--s2);font-weight:700;overflow-wrap:anywhere}
 .tr-mini{margin-left:6px;padding:0 8px}
 .rt.done .tr-note{justify-content:center}.rt.done .tr-safe{align-items:center}
+/* ── 총괄 소속 인원(.scm-): 사업장 카드 아래 '소속 인원 보기'(기본 접힘) + 이름·"직책 · 역할"·오늘 출근 상태 목록 (색은 토큰만, 누르는 것은 44px 이상) ── */
+.scwrap,.scm{display:flex;flex-direction:column;gap:var(--s1)}.scwrap{margin-bottom:var(--s2)}
+.scm-toggle{display:flex;align-items:center;justify-content:center;gap:var(--s2);margin:0}
+.scm-arrow{flex:none;font-size:.85rem}
+.scm-row{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);min-height:56px;padding:var(--s3) var(--s4)}
+.scm-main{display:flex;flex-direction:column;flex:1 1 0;min-width:0}
+.scm-row .badge{flex:none}
+.scm-empty{margin:0;padding:var(--s3) var(--s4)}

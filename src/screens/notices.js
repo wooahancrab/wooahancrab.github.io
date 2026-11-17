@@ -9,8 +9,8 @@ import { dateOf, fmtHM, labelMD, todayKST } from "../lib/kst.js";
 import { t, tx, lang } from "../lib/i18n.js";
 
 // 공지를 올릴 수 있는 역할. 서버 SQL 함수 can_post_notice() 와 항상 같게 둔다.
-// 회장(chairman) 역할이 생기면 여기와 그 SQL 함수에 한 줄씩만 더한다.
-export const NOTICE_POSTER_ROLES = ["owner", "deputy"];
+// 회장(chairman)은 3단계에서 더했다. 역할을 바꿀 때는 여기와 그 SQL 함수 두 곳만 같이 고친다.
+export const NOTICE_POSTER_ROLES = ["owner", "deputy", "chairman"];
 export const canPostNotice = (role) => NOTICE_POSTER_ROLES.includes(role);
 
 const TITLE_MAX = 60, BODY_MAX = 1500; // 서버 검사와 같게

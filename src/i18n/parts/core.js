@@ -5,6 +5,7 @@ export default {
     // ── 머리글·역할 이름 (main.js) ──
     "대표": "Giám đốc",
     "부대표": "Phó giám đốc",
+    "회장": "Chủ tịch",
     "매니저": "Quản lý",
     "중간관리자": "Trưởng bộ phận",
     "직원": "Nhân viên",
@@ -28,6 +29,8 @@ export default {
     "매니저로 입장": "Vào với tư cách Quản lý",
     "직원으로 입장": "Vào với tư cách Nhân viên",
     "대표로 입장": "Vào với tư cách Giám đốc",
+    "부대표로 입장": "Vào với tư cách Phó giám đốc",
+    "회장으로 입장": "Vào với tư cách Chủ tịch",
     "이 앱에 연결된 사업장을 찾지 못했어요": "Không tìm thấy cơ sở liên kết với ứng dụng này",
     "화면을 불러오지 못했어요: {msg}": "Không tải được màn hình: {msg}",
 
@@ -146,6 +149,7 @@ export default {
     // ── 머리글·역할 이름 (main.js) ──
     "대표": "CEO",
     "부대표": "Deputy CEO",
+    "회장": "Chairman",
     "매니저": "Manager",
     "중간관리자": "Supervisor",
     "직원": "Staff",
@@ -169,6 +173,8 @@ export default {
     "매니저로 입장": "Enter as Manager",
     "직원으로 입장": "Enter as Staff",
     "대표로 입장": "Enter as CEO",
+    "부대표로 입장": "Enter as Deputy CEO",
+    "회장으로 입장": "Enter as Chairman",
     "이 앱에 연결된 사업장을 찾지 못했어요": "Couldn't find a workplace linked to this app",
     "화면을 불러오지 못했어요: {msg}": "Couldn't load this screen: {msg}",
 

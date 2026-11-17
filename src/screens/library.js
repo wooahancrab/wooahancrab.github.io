@@ -7,7 +7,7 @@ import { dateOf, labelMD } from "../lib/kst.js";
 import { t, tx, lang, LANGS, isLang } from "../lib/i18n.js";
 
 const AUD = { all: "전 직원", store: "사업장", admin: "관리자" }; // 보일 때 t(AUD[...])로 감싼다
-const TOP_ROLES = ["owner", "deputy"]; // 자료를 올리고 사업장을 고를 수 있는 직책. 회장(chairman) 역할이 생기면 여기에 한 줄 추가(서버는 library.sql 의 my_role() in (...) 도 같이)
+const TOP_ROLES = ["owner", "deputy", "chairman"]; // 자료를 올리고 사업장을 고를 수 있는 직책(회장은 3단계에서 더함). 바꿀 때는 서버 library.sql 의 my_role() in (...) 정책도 같이
 const LANG_NAME = Object.fromEntries(LANGS); // 배지·칩·고르는 칸의 언어 이름은 그 나라 글자 그대로 보인다(번역하지 않는다)
 const LANG_SAY = { ko: "한국어", vi: "베트남어", en: "영어" }; // 문장 속 언어 이름은 보는 사람 언어로 풀어 쓴다(한국어 문장에 'Tiếng Việt판', 영어 문장에 '한국어 version'이 끼지 않게)
 const sayLang = (k) => tx("언어 이름", LANG_SAY[k]);
@@ -99,7 +99,7 @@ export async function renderLibrary(root, opts = {}) {
     const drawPicks = () => picks.replaceChildren(...names.slice(0, 6).map((n) =>
       h("button", { type: "button", class: "chip" + (folderIn.value.trim() === n ? " on" : ""), onclick: () => { folderIn.value = n; folderChanged(); } }, folderLabel(n))));
     const note = h("input", { class: "inp", placeholder: t("설명 (선택)"), maxlength: "100" });
-    const aud = h("select", { class: "inp" }, [["all", "전 직원이 볼 수 있어요"], ["store", "선택한 사업장 직원만"], ["admin", "대표·부대표·정산 권한자만"]].map(([v, l]) => h("option", { value: v }, t(l))));
+    const aud = h("select", { class: "inp" }, [["all", "전 직원이 볼 수 있어요"], ["store", "선택한 사업장 직원만"], ["admin", "대표·부대표·회장·정산 권한자만"]].map(([v, l]) => h("option", { value: v }, t(l))));
     const st = h("select", { class: "inp" }, stores.map((s) => h("option", { value: s.id }, s.display_name ?? s.name)));
     const stRow = h("div", { style: "display:none" }, st);
     aud.onchange = () => { stRow.style.display = aud.value === "store" && top ? "" : "none"; };

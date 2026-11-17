@@ -18,7 +18,7 @@ const LABELS = { card: () => t("카드"), cash: () => t("현금"), delivery: () 
 export const METHODS = Object.keys(LABELS).map((k) => Object.defineProperty([k, ""], 1, { get: LABELS[k], enumerable: true })); // [[구분 값, 이름], …] — 이름은 읽을 때 화면 언어
 export const METHOD_LABEL = Object.defineProperties({}, Object.fromEntries(Object.keys(LABELS).map((k) => [k, { get: LABELS[k], enumerable: true }])));
 export const DEFAULT_DAYS = 18;
-// 열람 권한: 대표·부대표·회장. 서버(supabase/recon18.sql 의 can_view_finance)와 같아야 한다. 'chairman'은 회장 역할을 만들 때 이름을 맞춘다.
+// 열람 권한: 대표·부대표·회장. 서버(supabase/recon18.sql 의 can_view_finance)와 같아야 한다. 'chairman' 은 3단계에서 profiles.role 의 정식 값이 됐다(tools/role-test.html 이 화면 목록들과 같은지 본다).
 export const FINANCE_VIEW_ROLES = ["owner", "deputy", "chairman"];
 export const canViewFinance = (role) => FINANCE_VIEW_ROLES.includes(role);
 export const DEFAULT_TOL = 1000; // 이 금액 이하의 차이는 같은 금액으로 본다(원)
