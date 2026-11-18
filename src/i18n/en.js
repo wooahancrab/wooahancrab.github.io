@@ -18,4 +18,5 @@ import finance from "./parts/finance.js";
 import notices from "./parts/notices.js";
 import glossary from "./parts/glossary.js";
 import taskstr from "./parts/taskstr.js";
-export default { ...core.en, ...attendance.en, ...tasks.en, ...checklist.en, ...claims.en, ...suggest.en, ...library.en, ...adminOwner.en, ...adminOps.en, ...work.en, ...projects.en, ...projectFeed.en, ...aiTask.en, ...recon.en, ...reconOut.en, ...finance.en, ...notices.en, ...glossary.en, ...taskstr.en };
+import hr from "./parts/hr.js";
+export default { ...core.en, ...attendance.en, ...tasks.en, ...checklist.en, ...claims.en, ...suggest.en, ...library.en, ...adminOwner.en, ...adminOps.en, ...work.en, ...projects.en, ...projectFeed.en, ...aiTask.en, ...recon.en, ...reconOut.en, ...finance.en, ...notices.en, ...glossary.en, ...taskstr.en, ...hr.en };

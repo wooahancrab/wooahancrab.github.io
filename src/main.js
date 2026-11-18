@@ -46,7 +46,9 @@ const TOP_ROLES = ["owner", "deputy", "chairman"];
 // 역할 이름(화면 언어로). 모르는 역할이면 빈 글자
 const roleLabel = (r) => (ROLE_LABEL[r] ? t(ROLE_LABEL[r]) : "");
 
-async function logout() { await api.signOut(); langKeep = null; resumeTab = null; boot(); }
+// 인사 현황(4단계)의 수정 시트·확인창은 급여 금액이 들어 있을 수 있어 document.body 에 .hr-overlay 로 붙는다 → 로그아웃·다시 그리기 때 모두 지운다
+const clearHrOverlays = () => document.querySelectorAll(".hr-overlay").forEach((e) => e.remove());
+async function logout() { clearHrOverlays(); await api.signOut(); langKeep = null; resumeTab = null; boot(); }
 
 // 언어를 바꿔 화면을 다시 그릴 때 보던 탭으로 돌아오기 위한 기억
 let curTab = null, resumeTab = null;
@@ -112,6 +114,7 @@ function loginScreen(msg) {
 }
 
 async function boot() {
+  clearHrOverlays(); // 세션 만료·언어 바꾸기·로그아웃 뒤 로그인 화면 위에 금액이 든 시트가 남지 않게(boot 는 다시 그리기가 모두 지나는 길)
   drawKakaoBanner();
   let profile;
   try { profile = await api.getProfile(); } catch (e) { loginScreen(e.message); return; }
@@ -191,8 +194,11 @@ function tabbedHome(view, profile, tabs) {
   };
   // 공지: 탭 줄 위. 공지가 없으면 자리는 비어 있다(높이 0). 불러오기가 실패해도 다른 화면에는 영향이 없다
   const nt = h("div", { id: "notices" });
-  view.append(nt, bar, body);
+  // 내 보건증(4단계): 공지 바로 아래·탭 줄 위. 보건증이 필요한 직원에게만 그려지고 그 밖에는 비어 있다(높이 0). 문제가 있어도 다른 화면에는 영향이 없다
+  const hrc = h("div", { id: "my-health" });
+  view.append(nt, hrc, bar, body);
   import("./screens/notices.js").then((m) => m.mountNotices(nt, profile)).catch((e) => console.warn("[공지] 화면을 불러오지 못했어요:", e?.message));
+  import("./screens/hr-me.js").then((m) => m.mountMyHealth(hrc, profile)).catch(() => { /* 조용히 */ });
   show();
   // 프로젝트 탭: 모든 직원에게 보인다(새 프로젝트도 직원이 직접 만든다). ?p=프로젝트&post=글 주소로 바로 열기도 한다.
   const dl = new URLSearchParams(location.search);

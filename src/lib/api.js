@@ -272,6 +272,8 @@ const demo = {
   async signIn(role) { LS.set("woo_demo_session", { role }); },
   async signOut() { localStorage.removeItem("woo_demo_session"); },
   setStore(st) { curStore = st; },
+  // 인사 현황(4단계): 데모는 가상 자료만(hr-demo.js). 화면은 const hr = await api.hr() 로 쓴다
+  hr() { return import("./hr-demo.js").then((m) => m.makeHrDemo({ me: () => this.getProfile(), stores: DEMO_STORES })); },
   async changePassword() { throw new Error("데모 모드에서는 비밀번호를 바꿀 수 없어요"); },
   // 업무지시(데모): 메모리 안에서만 동작한다. 번역은 하지 않고(translated:false), 안전 되묻기는 비슷한 말로 흉내 낸다
   async tkMine() { return tkDemo.list(); },
@@ -476,6 +478,7 @@ const demo = {
 /* ---------------- Supabase ---------------- */
 let _sb;
 let pjMod; // 프로젝트 기능은 따로 불러온다(새 파일에 문제가 있어도 로그인·다른 화면은 정상)
+let hrMod; // 인사 현황(4단계)도 따로 불러온다. 이 변수에는 코드만 두고 직원 자료는 담지 않는다
 async function sb() {
   if (!_sb) {
     const { createClient } = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm");
@@ -858,6 +861,10 @@ const remote = {
   // 프로젝트 아카이브: 화면은 const pj = await api.pj() 로 쓴다 (pj-api.js, projects.sql)
   pj() {
     return (pjMod ??= import("./pj-api.js").then((m) => m.makePj({ sb, me: () => this.getProfile() })).catch((e) => { pjMod = null; throw e; }));
+  },
+  // 인사 현황(4단계, hr.sql): 화면은 const hr = await api.hr() 로 쓴다 (hr-api.js). 서버가 RLS 로 막는다
+  hr() {
+    return (hrMod ??= import("./hr-api.js").then((m) => m.makeHr({ sb, me: () => this.getProfile(), listStores: () => this.listStores() })).catch((e) => { hrMod = null; throw e; }));
   },
   // 서식·자료함: 파일은 Storage(library), 목록·권한은 library_files(RLS). 보이는 것만 서버가 내려준다.
   async libList() {

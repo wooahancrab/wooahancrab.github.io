@@ -9,6 +9,7 @@ import { renderTasksAdmin } from "./tasks-admin.js";
 import { doneNoteInline } from "../lib/tr.js";
 import { renderWork } from "./work.js";
 import { renderLibrary } from "./library.js";
+import { canManageHr } from "../lib/hr.js";
 
 // 사업장 짧은 이름(칩·목록용). 화면 언어가 정해진 뒤 그릴 때 평가돼야 해서 함수로 둔다
 const shortName = (key) => ({ gejang: t("게장"), ck: "CK", fnb: "F&B" })[key];
@@ -34,9 +35,12 @@ export async function renderCeo(root, profile) {
   const dl = new URLSearchParams(location.search);
   let pjOpts = { openId: dl.get("p") || null, postId: dl.get("post") || null };
   let pjOpen = !!pjOpts.openId;
+  // 직원 인사 현황 화면(대표·회장·부대표). 알림을 눌러 ?hr=1 로 들어오면 바로 연다(들어온 뒤 주소에서 ?hr=1 을 지운다)
+  let hrOpen = canManageHr(profile.role) && dl.get("hr") === "1";
+  let hrLink = hrOpen;
   let wk = null, people = [], wkOpen = false; // 업무 기록(일지·일정·기록함) 전체, 직원 목록, 전체 기록 화면
   try { sel = localStorage.getItem("woo_ceo_sel") || "all"; } catch { /* 저장소를 못 쓰는 환경 */ }
-  if (pjOpen) sel = "all";
+  if (pjOpen || hrOpen) sel = "all";
 
   const badge = (label, c) => h("span", { class: "badge " + c }, label);
 
@@ -44,6 +48,9 @@ export async function renderCeo(root, profile) {
   // 사업장 칩으로 끼워 넣는 owner.js 화면(embedded)에는 공지를 그리지 않아 같은 공지가 두 번 나오지 않는다
   const noticeHost = h("div");
   import("./notices.js").then((m) => m.mountNotices(noticeHost, profile, { inline: true })).catch((e) => console.warn("[공지] 화면을 불러오지 못했어요:", e?.message));
+  // 내 보건증 카드(부대표·회장): 공지 바로 아래. 한 번만 만들어 다시 그려도 같은 자리를 쓴다. 대표(owner)에게는 없다. 보건증이 필요하지 않으면 비어 있다
+  const myHealthHost = h("div");
+  if (profile.role !== "owner") import("./hr-me.js").then((m) => m.mountMyHealth(myHealthHost, profile, { inline: true })).catch(() => { /* 조용히 */ });
 
   async function load() {
     try {
@@ -62,7 +69,7 @@ export async function renderCeo(root, profile) {
     } catch (e) { err = e.message; }
     draw();
     // 프로젝트 안 읽음 숫자는 따로(느려도 첫 화면을 막지 않는다)
-    import("./projects.js").then((m) => m.pjSummary()).then((s) => { if (s.newPosts !== pjNew) { pjNew = s.newPosts; if (sel === "all" && !pjOpen && !aiOpen && !libOpen && !wkOpen && !tkOpen && !sgOpen && !glOpen && !accountsOpen) draw(); } }).catch(() => {});
+    import("./projects.js").then((m) => m.pjSummary()).then((s) => { if (s.newPosts !== pjNew) { pjNew = s.newPosts; if (sel === "all" && !pjOpen && !aiOpen && !libOpen && !wkOpen && !tkOpen && !sgOpen && !glOpen && !hrOpen && !accountsOpen) draw(); } }).catch(() => {});
   }
 
   function choose(id) {
@@ -202,13 +209,23 @@ export async function renderCeo(root, profile) {
       // 건의함은 대표만(부대표·회장도 못 봄 — 읽는 사람은 6단계에서 정한다. 직원 화면의 "대표만 볼 수 있어요" 문구도 그때 함께)
       profile.role === "owner" && h("button", { class: "btn ghost", style: "margin-top:8px", onclick: () => { sgOpen = true; draw(); } }, t("💌 건의함") + (sgNew > 0 ? ` (${t("새 건의 {n}", { n: sgNew })})` : "")),
       // 회사 용어집(대표·부대표·회장): 이 총괄 앱은 대표·부대표·회장만 들어오고, 화면 안에서 GLOSSARY_ROLES 로 한 번 더 확인한다(역할 목록은 거기와 SQL 두 곳에만 둔다)
-      h("button", { class: "btn ghost", style: "margin-top:8px", onclick: () => { glOpen = true; draw(); } }, t("📖 회사 용어집")));
+      h("button", { class: "btn ghost", style: "margin-top:8px", onclick: () => { glOpen = true; draw(); } }, t("📖 회사 용어집")),
+      // 직원 인사 현황(대표·회장·부대표만 단추가 보인다. 역할 목록은 hr.js 의 HR_ROLES 와 SQL hr_can_manage() 두 곳에만 둔다). 다른 앱(게장·CK·F&B)에는 단추가 없다
+      canManageHr(profile.role) && h("button", { class: "btn ghost", style: "margin-top:8px", onclick: () => { hrOpen = true; draw(); } }, t("👥 직원 인사 현황")));
   }
 
   function glView() {
     const holder = h("div");
     import("./glossary.js").then((m) => m.renderGlossary(holder, { profile, onBack: () => { glOpen = false; draw(); } }))
       .catch((e) => holder.replaceChildren(h("p", { class: "err", style: "padding:16px" }, t("용어집 화면을 불러오지 못했어요: {msg}", { msg: errText(e.message) }))));
+    return holder;
+  }
+
+  function hrView() {
+    const holder = h("div");
+    if (hrLink) { hrLink = false; try { history.replaceState(history.state, "", location.pathname); } catch { /* 무시 */ } } // 새로 고침으로 인사 화면이 다시 열리지 않게(pjView 와 같다. pushState 는 쓰지 않는다)
+    import("./hr.js").then((m) => m.renderHr(holder, { profile, onBack: () => { hrOpen = false; draw(); } }))
+      .catch((e) => holder.replaceChildren(h("p", { class: "err", style: "padding:16px" }, t("직원 인사 현황 화면을 불러오지 못했어요: {msg}", { msg: errText(e.message) }))));
     return holder;
   }
 
@@ -273,7 +290,7 @@ export async function renderCeo(root, profile) {
   let boardY = 0, wasSub = false, wasSel = sel;
   function draw() {
     let y = scrollY;
-    const sub = sel === "all" && (pjOpen || aiOpen || libOpen || wkOpen || tkOpen || sgOpen || glOpen || accountsOpen);
+    const sub = sel === "all" && (pjOpen || aiOpen || libOpen || wkOpen || tkOpen || sgOpen || glOpen || hrOpen || accountsOpen);
     if (sub && !wasSub && wasSel === "all") { boardY = y; y = 0; } // 새 화면은 맨 위에서 시작(예전에는 그리는 도중 짧아졌다 늘어나며 저절로 맨 위가 됐다)
     else if (!sub && wasSub && sel === "all" && wasSel === "all") y = boardY;
     wasSub = sub; wasSel = sel;
@@ -283,7 +300,7 @@ export async function renderCeo(root, profile) {
       pjOpen && sel === "all" ? pjView()
         : err ? h("div", { class: "page" }, h("p", { class: "err" }, t("불러오기 실패: {msg}", { msg: errText(err) })), h("button", { class: "btn ghost", onclick: load }, t("다시 시도")))
         : !ov ? h("div", { class: "page" }, h("p", { class: "muted" }, t("불러오는 중…")))
-        : sel === "all" ? (aiOpen ? aiView() : pjOpen ? pjView() : libOpen ? libView() : wkOpen ? wkView() : tkOpen ? tkView() : sgOpen ? sgView() : glOpen ? glView() : accountsOpen ? accountsView() : h("div", { class: "page" }, noticeHost, allView())) : storeView());
+        : sel === "all" ? (aiOpen ? aiView() : pjOpen ? pjView() : libOpen ? libView() : wkOpen ? wkView() : tkOpen ? tkView() : sgOpen ? sgView() : glOpen ? glView() : hrOpen ? hrView() : accountsOpen ? accountsView() : h("div", { class: "page" }, noticeHost, myHealthHost, allView())) : storeView());
     scrollTo(0, y);
   }
 

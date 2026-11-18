@@ -303,3 +303,62 @@ ul.plain{margin:0;padding-left:1.1em}.plain-pre{white-space:pre-line;margin:0}
 .scm-main{display:flex;flex-direction:column;flex:1 1 0;min-width:0}
 .scm-row .badge{flex:none}
 .scm-empty{margin:0;padding:var(--s3) var(--s4)}
+/* ── 직원 인사 현황(.hr-): 요약 칩·직원 카드·급여 가림·수정 시트·내 보건증 카드 (색은 토큰만, 누르는 것은 44px 이상, 상태는 글자 + 색) ── */
+.hr-page{overflow-anchor:none} /* 목록을 다시 그릴 때 브라우저가 스크롤을 따로 옮기지 않게(보던 자리는 코드가 그대로 되돌린다) */
+.hr-root [hidden],.hr-overlay [hidden]{display:none !important}
+.hr-sum .hr-seg{margin:var(--s3) 0 var(--s1)}
+.hr-range{margin:0 0 var(--s2)}
+.hr-chips{margin:var(--s2) 0}
+.hr-chip{text-align:left;line-height:1.3}
+.hr-help{margin:var(--s2) 0}
+.hr-help summary{display:flex;align-items:center;min-height:44px;font-weight:700;font-size:.9rem;cursor:pointer}
+.hr-help p{margin:var(--s1) 0 var(--s2)}
+.hr-empty{text-align:center}
+.hr-empty .hr-clear{width:auto;display:inline-block;margin:var(--s2) 0 0}
+.hr-foot{margin:var(--s5) 0 0}
+.hr-card{gap:var(--s2)}
+.hr-top{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--s2)}
+.hr-who{display:flex;flex-direction:column;min-width:0}
+.hr-name{font-size:1.05rem;line-height:1.35}
+.hr-card .hr-edit,.hr-card .hr-pay-btn{width:auto;flex:none;margin:0;min-width:64px}
+.hr-rate{display:flex;flex-wrap:wrap;align-items:baseline;gap:var(--s1) var(--s2)}
+.hr-rate-big{font-size:1.3rem;font-weight:700;font-variant-numeric:tabular-nums}
+.hr-line{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s1) var(--s2)}
+.hr-health{min-width:0}
+.hr-ins{display:grid;grid-template-columns:1fr 1fr;gap:var(--s1) var(--s2)}
+.hr-ins .badge,.hr-line .badge{white-space:normal;text-align:center}
+.hr-ins .badge{border-radius:var(--r-md)}
+.hr-pay{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s1) var(--s2)}
+.hr-pay-k{color:var(--muted);font-size:.9rem}
+.hr-pay-v{flex:1 1 auto;min-width:0}
+.hr-mask{letter-spacing:.1em}
+/* 수정 시트(.dialog 위에): 구역은 연한 선(.divider)으로 나눈다 */
+.hr-sheet .hr-fsec{display:flex;flex-direction:column;gap:var(--s2)}
+.hr-sheet .divider{margin:var(--s4) 0}
+.hr-fhead{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--s2)}
+.hr-sheet .hr-all{width:auto;flex:none;margin:0}
+.hr-insrow{display:flex;flex-direction:column;gap:var(--s1)}
+.hr-insname{font-weight:700;font-size:.95rem}
+.hr-sheet .hr-err{margin:0;font-size:.85rem;font-weight:700}
+.hr-sheet .lbl{margin-top:0}
+.hr-sheet .inp{margin:0}
+.hr-amountwrap,.hr-dates{display:flex;flex-direction:column;gap:var(--s1)}
+.hr-file{display:flex;flex-direction:column;gap:var(--s2);padding:var(--s2) var(--s3);border:1px solid var(--line);border-radius:var(--r-md)}
+.hr-files{display:flex;flex-direction:column;gap:var(--s2)}
+.hr-fmain{display:flex;flex-direction:column;min-width:0}
+.hr-fname{font-weight:700;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow-wrap:anywhere}
+.hr-facts{display:flex;gap:var(--s2)}
+.hr-facts .btn{flex:1 1 0;width:auto;min-width:0;margin:0}
+.hr-sheet .hr-upload,.hr-sheet .hr-save,.hr-sheet .hr-save-next,.hr-sheet .hr-cancel{margin:var(--s2) 0 0}
+.hr-savemsg{margin:var(--s3) 0 0}
+.hr-lastmod{margin:var(--s2) 0 0}
+.hr-confirm ul{margin:0 0 var(--s3)}
+/* 내 보건증(직원 화면·총괄 홈): 얇은 카드 한 장. 보건증이 필요한 직원에게만 그려진다 */
+.hr-me-host{max-width:560px;margin:0 auto;padding:var(--s2) var(--gutter) 0}
+.hr-me-host.inline{max-width:none;margin:0 0 var(--s3);padding:0}
+.hr-me-host:empty{display:none}
+.hr-me{gap:var(--s1);padding:var(--s3) var(--s4);margin:0}
+.hr-me-top{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s1) var(--s2)}
+.hr-me-note{margin:0}
+/* 인쇄·PDF 저장에는 인사 화면을 내보내지 않는다(급여 유출 경로 차단, 설계 D13) */
+@media print{.hr-root,.hr-overlay{display:none !important}}
